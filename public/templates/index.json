@@ -1,0 +1,34 @@
+[
+  {
+    "id": "comfy:klein-edit-image",
+    "slug": "klein-edit-image",
+    "kind": "comfy",
+    "name": "Klein Edit Image",
+    "configUrl": "./templates/comfy/klein-edit-image/app_build.json",
+    "workflowUrl": "./templates/comfy/klein-edit-image/api.json"
+  },
+  {
+    "id": "comfy:sdvn-klein-upscale-ultimate",
+    "slug": "sdvn-klein-upscale-ultimate",
+    "kind": "comfy",
+    "name": "SDVN Klein Upscale Ultimate",
+    "configUrl": "./templates/comfy/sdvn-klein-upscale-ultimate/app_build.json",
+    "workflowUrl": "./templates/comfy/sdvn-klein-upscale-ultimate/api.json"
+  },
+  {
+    "id": "runninghub-workflow:klein-edit-image-lora",
+    "slug": "klein-edit-image-lora",
+    "kind": "runninghub-workflow",
+    "name": "Klein Edit Image Lora",
+    "configUrl": "./templates/runninghub-workflow/klein-edit-image-lora/app_build.json",
+    "workflowUrl": "./templates/runninghub-workflow/klein-edit-image-lora/api.json"
+  },
+  {
+    "id": "runninghub-workflow:sdvn-klein-upscale-ultimate",
+    "slug": "sdvn-klein-upscale-ultimate",
+    "kind": "runninghub-workflow",
+    "name": "SDVN Klein Upscale Ultimate",
+    "configUrl": "./templates/runninghub-workflow/sdvn-klein-upscale-ultimate/app_build.json",
+    "workflowUrl": null
+  }
+]
