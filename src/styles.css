@@ -99,18 +99,34 @@ main { padding: 0 18px 28px; }
 .mode-tabs button.active::after { background: var(--accent); }
 .mode-label-short { display: none; }
 
-.workflow-picker { padding: 17px 0 18px; border-bottom: 1px solid var(--line); }
-.picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
-.picker-heading h2 { margin: 0 0 4px; font-size: 13px; }
-.picker-heading p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.workflow-picker { padding: 17px 0 0; }
+.picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.picker-heading h2 { margin: 0; font-size: 13px; }
 .import-folder-button { min-height: 31px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text); cursor: pointer; font-size: 10px; }
 .import-folder-button:hover { border-color: var(--accent); }
 .import-folder-button:disabled { opacity: .55; cursor: wait; }
 .template-select-row { display: flex; align-items: center; gap: 7px; }
-.template-select-row select { flex: 1; min-width: 0; font-weight: 600; }
+.template-select-wrap,
+.preset-select-wrap,
+.preset-input-wrap { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--control); color: var(--muted); }
+.template-select-wrap:focus-within,
+.preset-select-wrap:focus-within,
+.preset-input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,140,255,.12); }
+.template-select-wrap select,
+.preset-select-wrap select,
+.preset-input-wrap input { flex: 1; min-width: 0; height: 36px; padding: 0; border: 0; background: transparent; color: var(--text); font-weight: 600; }
+.template-select-wrap select:focus,
+.preset-select-wrap select:focus,
+.preset-input-wrap input:focus { outline: none; box-shadow: none; border-color: transparent; }
+.preset-input-wrap.has-error { border-color: var(--danger); }
+.preset-message { padding-top: 6px; color: var(--muted); font-size: 10px; }
+
+.preset-bar { padding: 12px 0 18px; border-bottom: 1px solid var(--line); }
+.workflow-picker + .preset-bar { padding-top: 10px; }
+.workflow-picker:not(:has(+ .preset-bar)) { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.preset-action-row { display: flex; align-items: center; gap: 7px; }
+
 .template-delete-button { flex: 0 0 auto; }
-.selected-template-meta { min-height: 24px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; color: var(--muted); font-size: 10px; }
-.selected-template-meta strong { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--accent); font-size: 8px; letter-spacing: .05em; text-transform: uppercase; }
 .custom-app-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; margin-top: 9px; }
 .custom-app-row button { min-height: 38px; display: inline-flex; align-items: center; gap: 5px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); cursor: pointer; font-weight: 650; }
 .custom-app-row button:hover:not(:disabled) { border-color: var(--accent); }
@@ -178,7 +194,6 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
   min-height: 44px;
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  overflow: hidden;
   background: var(--accent);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
 }
@@ -189,7 +204,7 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
   min-height: 44px;
   margin: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
   box-shadow: none;
   appearance: none;
   -webkit-appearance: none;
@@ -209,7 +224,7 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
   place-items: center;
   border: 0;
   border-left: 1px solid color-mix(in srgb, var(--on-accent) 24%, transparent);
-  border-radius: 0;
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
   background: var(--accent);
   color: var(--on-accent);
   cursor: pointer;
@@ -221,9 +236,22 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
 .run-controls:has(.run-button:disabled) .run-controls-toggle {
   background: color-mix(in srgb, var(--accent) 58%, var(--bg));
   color: color-mix(in srgb, var(--on-accent) 72%, transparent);
-  cursor: not-allowed;
 }
-.run-controls-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 168px; display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: 0 10px 30px rgba(0,0,0,.28); }
+.run-controls-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(0,0,0,.28);
+}
 .run-controls-menu button { min-height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font-size: 12px; }
 .run-controls-menu button:hover:not(:disabled) { background: var(--accent-soft); }
 .run-controls-menu button:disabled { opacity: .4; cursor: not-allowed; }

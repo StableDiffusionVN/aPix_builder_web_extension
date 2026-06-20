@@ -2,15 +2,15 @@ import { FolderInput, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { AppInfoCard } from "./AppInfoCard";
 
-const MODE_COPY = {
-  comfy: { title: "ComfyUI Template", hint: "Template chạy trên ComfyUI local hoặc remote" },
-  "runninghub-workflow": { title: "RunningHub Workflow", hint: "Workflow ID và input được đọc từ app_build" },
-  "runninghub-app": { title: "RunningHub App", hint: "App mặc định hoặc App ID của riêng bạn" }
+const MODE_TITLES = {
+  comfy: "ComfyUI Template",
+  "runninghub-workflow": "RunningHub Workflow",
+  "runninghub-app": "RunningHub App"
 };
 
 export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImportDirectory, onAddCustomApp, onDeleteCustom, importingFolder, scanningApp }) {
   const [customAppId, setCustomAppId] = useState("");
-  const copy = MODE_COPY[mode];
+  const title = MODE_TITLES[mode];
   const isAppMode = mode === "runninghub-app";
 
   async function addCustomApp() {
@@ -21,7 +21,7 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
   return (
     <section className="workflow-picker" aria-labelledby="workflow-picker-title">
       <div className="picker-heading">
-        <div><h2 id="workflow-picker-title">{copy.title}</h2><p>{copy.hint}</p></div>
+        <h2 id="workflow-picker-title">{title}</h2>
         {!isAppMode && (
           <button className="import-folder-button" onClick={onImportDirectory} disabled={importingFolder}>
             {importingFolder ? <LoaderCircle className="spin" size={15} /> : <FolderInput size={15} />} {importingFolder ? "Đang quét" : "Import"}
@@ -30,9 +30,11 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
       </div>
 
       <div className="template-select-row">
-        <select aria-label={copy.title} value={selected?.id || ""} onChange={event => onSelect(items.find(item => item.id === event.target.value))}>
-          {items.map(item => <option key={item.id} value={item.id}>{item.custom ? "[Custom] " : ""}{item.name}</option>)}
-        </select>
+        <div className="template-select-wrap">
+          <select aria-label={title} value={selected?.id || ""} onChange={event => onSelect(items.find(item => item.id === event.target.value))}>
+            {items.map(item => <option key={item.id} value={item.id}>{item.custom ? "[Custom] " : ""}{item.name}</option>)}
+          </select>
+        </div>
         {selected?.custom ? (
           <button
             type="button"
@@ -45,8 +47,6 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
           </button>
         ) : null}
       </div>
-      {!isAppMode && selected && <div className="selected-template-meta"><span>{selected.description}</span>{selected.custom && <strong>Custom</strong>}</div>}
-
       {isAppMode && <AppInfoCard info={appInfo} />}
 
       {isAppMode && (

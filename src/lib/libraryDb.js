@@ -1,8 +1,9 @@
 const DB_NAME = "apix-builder-web-extension";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const INPUT_STORE = "input";
 const OUTPUT_STORE = "outputs";
 const TEMPLATE_STORE = "templates";
+const PRESET_STORE = "workflowPresets";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -17,6 +18,9 @@ function openDb() {
       if (!db.objectStoreNames.contains(TEMPLATE_STORE)) {
         const store = db.createObjectStore(TEMPLATE_STORE, { keyPath: "id" });
         store.createIndex("kind", "kind");
+      }
+      if (!db.objectStoreNames.contains(PRESET_STORE)) {
+        db.createObjectStore(PRESET_STORE, { keyPath: "templateId" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -92,4 +96,28 @@ export function listCustomCatalogItems() {
 
 export function deleteCustomCatalogItem(id) {
   return transact(TEMPLATE_STORE, "readwrite", store => store.delete(id));
+}
+
+export async function readWorkflowPresets() {
+  const records = await transact(PRESET_STORE, "readonly", store => store.getAll());
+  return Object.fromEntries(records.map(record => [record.templateId, record.presets || []]));
+}
+
+export async function writeWorkflowPresets(presetsByTemplate) {
+  const db = await openDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(PRESET_STORE, "readwrite");
+      const store = transaction.objectStore(PRESET_STORE);
+      store.clear();
+      for (const [templateId, presets] of Object.entries(presetsByTemplate || {})) {
+        store.put({ templateId, presets: Array.isArray(presets) ? presets : [] });
+      }
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Không thể lưu preset"));
+    });
+  } finally {
+    db.close();
+  }
 }

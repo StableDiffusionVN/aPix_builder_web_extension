@@ -6,15 +6,17 @@ import { ImageLightbox } from "./components/ImageLightbox";
 import { ImportPanel } from "./components/ImportPanel";
 import { ModeTabs } from "./components/ModeTabs";
 import { OutputLibrary } from "./components/OutputLibrary";
+import { PresetBar } from "./components/PresetBar";
 import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
-import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, runExclusiveImport, writeSettings } from "./lib/chromeBridge";
+import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
 import { defaultValues, flattenConfigInputs, loadCatalog, loadTemplateConfig } from "./lib/catalog";
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
+import { usePresets } from "./hooks/usePresets";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
 import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
@@ -55,6 +57,7 @@ export default function App() {
   const [catalog, setCatalog] = useState([]);
   const [mode, setMode] = useState("comfy");
   const [selected, setSelected] = useState(null);
+  const [selectedByMode, setSelectedByMode] = useState({});
   const [appInfo, setAppInfo] = useState(null);
   const [config, setConfig] = useState(null);
   const [fields, setFields] = useState([]);
@@ -80,7 +83,16 @@ export default function App() {
   const runQueueRef = useRef([]);
   const activeJobRef = useRef(null);
   const handledImportIdsRef = useRef(new Set());
+  const workspaceReadyRef = useRef(false);
   const previewUrlRef = useRef("");
+  const {
+    getPresets,
+    savePreset,
+    updatePreset,
+    deletePreset,
+    presetsVersion,
+    presetsStorageWarning
+  } = usePresets();
 
   const importFromFile = useCallback(async file => {
     setError("");
@@ -161,14 +173,26 @@ export default function App() {
   }, [importFromUrl]);
 
   useEffect(() => {
-    Promise.all([loadCatalog(), listCustomCatalogItems(), loadInput(), listOutputs(), readSettings()]).then(([items, customItems, savedImage, savedOutputs, savedSettings]) => {
+    Promise.all([loadCatalog(), listCustomCatalogItems(), loadInput(), listOutputs(), readSettings(), readWorkspaceState()]).then(([items, customItems, savedImage, savedOutputs, savedSettings, savedWorkspace]) => {
       const defaultsById = new Map(items.map(item => [item.id, item]));
       const mergedItems = [...items, ...customItems.filter(item => !defaultsById.has(item.id))];
+      const savedMode = ["comfy", "runninghub-workflow", "runninghub-app"].includes(savedWorkspace.mode)
+        ? savedWorkspace.mode
+        : "comfy";
+      const savedSelectedByMode = savedWorkspace.selectedByMode || {};
+      const restoredSelected = mergedItems.find(item => (
+        item.kind === savedMode && item.id === savedSelectedByMode[savedMode]
+      )) || mergedItems.find(item => item.kind === savedMode) || null;
       setCatalog(mergedItems);
+      setMode(savedMode);
+      setSelectedByMode(savedSelectedByMode);
+      setSelected(restoredSelected);
       setImage(savedImage || null);
       setOutputs(savedOutputs);
       setSettings(savedSettings);
       setSettingsDraft(savedSettings);
+      setSettingsOpen(Boolean(savedWorkspace.settingsOpen));
+      workspaceReadyRef.current = true;
     }).catch(nextError => setError(nextError.message));
     consumePendingImport().then(payload => {
       if (payload) {
@@ -187,6 +211,11 @@ export default function App() {
   }, [settings.theme]);
 
   const modeItems = useMemo(() => catalog.filter(item => item.kind === mode), [catalog, mode]);
+  const selectedTemplateId = selected?.id || "";
+  const currentPresets = useMemo(
+    () => selectedTemplateId ? getPresets(selectedTemplateId) : [],
+    [getPresets, presetsVersion, selectedTemplateId]
+  );
 
   useEffect(() => {
     if (!modeItems.length) {
@@ -194,9 +223,27 @@ export default function App() {
       return;
     }
     if (!selected || selected.kind !== mode || !modeItems.some(item => item.id === selected.id)) {
-      setSelected(modeItems[0]);
+      setSelected(modeItems.find(item => item.id === selectedByMode[mode]) || modeItems[0]);
     }
-  }, [mode, modeItems, selected]);
+  }, [mode, modeItems, selected, selectedByMode]);
+
+  useEffect(() => {
+    if (!workspaceReadyRef.current || !selected?.id || selected.kind !== mode) return;
+    setSelectedByMode(current => (
+      current[mode] === selected.id ? current : { ...current, [mode]: selected.id }
+    ));
+  }, [mode, selected]);
+
+  useEffect(() => {
+    if (!workspaceReadyRef.current) return;
+    writeWorkspaceState({
+      mode,
+      selectedByMode,
+      settingsOpen
+    }).catch(error => {
+      console.error("Failed to save extension workspace state:", error);
+    });
+  }, [mode, selectedByMode, settingsOpen]);
 
   useEffect(() => {
     if (!selected) return;
@@ -498,6 +545,7 @@ export default function App() {
   async function selectWorkflow(item) {
     if (!item) return;
     setSelected(item);
+    setSelectedByMode(current => ({ ...current, [item.kind]: item.id }));
     setStatus(`Đã chọn ${item.name}`);
   }
 
@@ -632,6 +680,17 @@ export default function App() {
           importingFolder={importingFolder}
           scanningApp={scanningApp}
         />
+        {mode !== "runninghub-app" ? (
+          <PresetBar
+            templateId={selectedTemplateId}
+            presets={currentPresets}
+            onLoad={nextValues => setValues(current => ({ ...current, ...nextValues }))}
+            onSave={name => savePreset(selectedTemplateId, name, values)}
+            onUpdate={id => updatePreset(selectedTemplateId, id, values)}
+            onDelete={id => deletePreset(selectedTemplateId, id)}
+            storageWarning={presetsStorageWarning}
+          />
+        ) : null}
         <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={running} />
         <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} workflowKind={mode} />
 

@@ -22,15 +22,21 @@ export function RunControls({
 
   useEffect(() => {
     if (!menuOpen) return undefined;
+    let active = true;
     function handlePointerDown(event) {
       if (!menuRef.current?.contains(event.target)) setMenuOpen(false);
     }
     function handleKeyDown(event) {
       if (event.key === "Escape") setMenuOpen(false);
     }
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("keydown", handleKeyDown, true);
+    const timeoutId = window.setTimeout(() => {
+      if (!active) return;
+      window.addEventListener("pointerdown", handlePointerDown, true);
+      window.addEventListener("keydown", handleKeyDown, true);
+    }, 0);
     return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
       window.removeEventListener("pointerdown", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeyDown, true);
     };

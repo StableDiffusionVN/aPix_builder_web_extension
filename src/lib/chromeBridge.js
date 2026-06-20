@@ -180,3 +180,28 @@ export async function writeSettings(settings) {
     localStorage.setItem("apix-settings", JSON.stringify(settings));
   }
 }
+
+export async function readWorkspaceState() {
+  const defaults = {
+    mode: "comfy",
+    selectedByMode: {},
+    settingsOpen: false
+  };
+  if (hasChromeRuntime() && chrome.storage?.local) {
+    const { workspaceState } = await chrome.storage.local.get("workspaceState");
+    return { ...defaults, ...(workspaceState || {}) };
+  }
+  try {
+    return { ...defaults, ...JSON.parse(localStorage.getItem("apix-workspace-state") || "{}") };
+  } catch {
+    return defaults;
+  }
+}
+
+export async function writeWorkspaceState(workspaceState) {
+  if (hasChromeRuntime() && chrome.storage?.local) {
+    await chrome.storage.local.set({ workspaceState });
+  } else {
+    localStorage.setItem("apix-workspace-state", JSON.stringify(workspaceState));
+  }
+}

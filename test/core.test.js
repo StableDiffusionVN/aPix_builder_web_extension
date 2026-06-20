@@ -11,6 +11,7 @@ import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppInfoCard } from "../src/components/AppInfoCard";
 import { OutputLibrary } from "../src/components/OutputLibrary";
+import { sanitizePresetValues } from "../src/hooks/usePresets";
 import { buildPendingImport, MENU_IMPORT_RUN_ID } from "../public/contextMenuModel";
 import { buildImageFetchAttempts, normalizeImageUrl } from "../public/imageFetch.js";
 import { parseStagingRef, stagingRef, embeddedImageFromBuffer, blobFromEmbeddedImage } from "../public/imageStaging.js";
@@ -88,6 +89,22 @@ describe("image helpers", () => {
     expect(fileStem("my photo.final.jpg")).toBe("my-photo-final");
     expect(extensionForType("image/jpeg")).toBe("jpg");
     expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MB");
+  });
+});
+
+describe("workflow presets", () => {
+  it("keeps scalar form values and drops large/image-like payloads", () => {
+    expect(sanitizePresetValues({
+      prompt: "make it realistic",
+      steps: 4,
+      enabled: true,
+      image: { kind: "input-image", blob: new Blob() },
+      preview: "data:image/png;base64,abc"
+    })).toEqual({
+      prompt: "make it realistic",
+      steps: 4,
+      enabled: true
+    });
   });
 });
 
