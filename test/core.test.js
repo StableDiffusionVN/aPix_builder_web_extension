@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { laneKeyForKind, laneKeyForMode } from "../src/hooks/useRunnerLane.js";
 import { extensionForType, fileStem, formatBytes } from "../src/lib/images";
 import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
@@ -405,5 +406,19 @@ describe("RunningHub workflow mapping", () => {
       { nodeId: "7", fieldName: "image", fieldType: "IMAGE", fieldValue: image },
       { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
     ]);
+  });
+});
+
+describe("runner lanes", () => {
+  it("maps ComfyUI to its own lane", () => {
+    expect(laneKeyForKind("comfy")).toBe("comfy");
+    expect(laneKeyForMode("comfy")).toBe("comfy");
+  });
+
+  it("maps RunningHub workflow and app to the same lane", () => {
+    expect(laneKeyForKind("runninghub-workflow")).toBe("rh");
+    expect(laneKeyForKind("runninghub-app")).toBe("rh");
+    expect(laneKeyForMode("runninghub-workflow")).toBe("rh");
+    expect(laneKeyForMode("runninghub-app")).toBe("rh");
   });
 });

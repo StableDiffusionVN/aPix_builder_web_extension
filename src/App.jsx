@@ -17,6 +17,7 @@ import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
 import { usePresets } from "./hooks/usePresets";
+import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
 import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
@@ -72,16 +73,13 @@ export default function App() {
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [importingFolder, setImportingFolder] = useState(false);
   const [scanningApp, setScanningApp] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [activeJob, setActiveJob] = useState(null);
-  const [runQueue, setRunQueue] = useState([]);
+  const comfyLane = useRunnerLane();
+  const rhLane = useRunnerLane();
+  const lanes = { comfy: comfyLane, rh: rhLane };
   const [autoRunImports, setAutoRunImports] = useState([]);
   const [previewOutput, setPreviewOutput] = useState(null);
   const [status, setStatus] = useState("Sẵn sàng");
   const [error, setError] = useState("");
-  const abortRef = useRef(null);
-  const runQueueRef = useRef([]);
-  const activeJobRef = useRef(null);
   const handledImportIdsRef = useRef(new Set());
   const workspaceReadyRef = useRef(false);
   const previewUrlRef = useRef("");
@@ -316,12 +314,13 @@ export default function App() {
     () => Boolean(image && selected && !loadingFields && !awaitingModelDiscovery),
     [image, selected, loadingFields, awaitingModelDiscovery]
   );
-  const queueCount = runQueue.length + autoRunImports.length;
-
-  function setQueue(nextQueue) {
-    runQueueRef.current = nextQueue;
-    setRunQueue(nextQueue);
-  }
+  const currentLaneKey = laneKeyForMode(mode);
+  const currentLane = lanes[currentLaneKey];
+  const otherLaneKey = currentLaneKey === "comfy" ? "rh" : "comfy";
+  const otherLane = lanes[otherLaneKey];
+  const queueCount = currentLane.queue.length + (
+    selected && laneKeyForKind(selected.kind) === currentLaneKey ? autoRunImports.length : 0
+  );
 
   function createJobSnapshot(imageOverride = null) {
     return {
@@ -339,7 +338,7 @@ export default function App() {
     };
   }
 
-  async function persistResults(results, job, startedAt) {
+  async function persistResults(results, job, startedAt, onStatus) {
     const saved = [];
     for (let index = 0; index < results.length; index += 1) {
       const result = results[index];
@@ -366,27 +365,29 @@ export default function App() {
     }
     setOutputs(current => [...saved, ...current]);
     setChecked(new Set(saved.map(item => item.id)));
-    setStatus(`Hoàn tất ${saved.length} output`);
+    onStatus?.(`Hoàn tất ${saved.length} output`);
   }
 
-  async function executeJob(job) {
+  async function executeJob(laneKey, job) {
+    const lane = lanes[laneKey];
     if (job.selected.kind.startsWith("runninghub") && !job.settings.runningHubApiKey) {
       setSettingsOpen(true);
       throw new Error("Cần RunningHub API Key để chạy lựa chọn này");
     }
 
-    setError("");
-    setRunning(true);
-    setActiveJob(job);
-    activeJobRef.current = job;
+    lane.setError("");
+    lane.setRunning(true);
+    lane.setActiveJob(job);
+    lane.activeJobRef.current = job;
     const controller = new AbortController();
-    abortRef.current = controller;
+    lane.abortRef.current = controller;
     const startedAt = Date.now();
-    const queueAhead = runQueueRef.current.length;
+    const queueAhead = lane.queueRef.current.length;
+    const updateStatus = message => lane.setStatus(message);
 
     try {
-      setStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý…`);
-      if (queueAhead) setStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý (${queueAhead} trong hàng chờ)…`);
+      updateStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý…`);
+      if (queueAhead) updateStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý (${queueAhead} trong hàng chờ)…`);
 
       let results;
       if (job.selected.kind === "comfy") {
@@ -399,7 +400,7 @@ export default function App() {
           values: job.values,
           image: job.image,
           signal: controller.signal,
-          onStatus: setStatus
+          onStatus: updateStatus
         });
       } else if (job.selected.kind === "runninghub-workflow") {
         const nodes = configFieldsToNodes(job.fields, job.values, job.image);
@@ -409,7 +410,7 @@ export default function App() {
           nodes,
           image: job.image,
           signal: controller.signal,
-          onStatus: setStatus
+          onStatus: updateStatus
         });
       } else {
         const nodes = job.fields.map(field => ({ ...field.node, fieldValue: job.values[field.key] }));
@@ -419,27 +420,27 @@ export default function App() {
           nodes,
           image: job.image,
           signal: controller.signal,
-          onStatus: setStatus
+          onStatus: updateStatus
         });
       }
 
-      await persistResults(results, job, startedAt);
+      await persistResults(results, job, startedAt, updateStatus);
     } catch (nextError) {
-      if (nextError.name !== "AbortError") setError(nextError.message);
-      setStatus(nextError.name === "AbortError" ? "Đã hủy" : "Chạy thất bại");
+      if (nextError.name !== "AbortError") lane.setError(nextError.message);
+      updateStatus(nextError.name === "AbortError" ? "Đã hủy" : "Chạy thất bại");
       throw nextError;
     } finally {
-      activeJobRef.current = null;
-      abortRef.current = null;
-      const [nextJob, ...remaining] = runQueueRef.current;
-      setQueue(remaining);
+      lane.activeJobRef.current = null;
+      lane.abortRef.current = null;
+      const [nextJob, ...remaining] = lane.queueRef.current;
+      lane.setQueue(remaining);
       if (nextJob) {
-        setActiveJob(nextJob);
-        setStatus(remaining.length ? `Chuyển sang job tiếp theo (${remaining.length} còn lại)…` : "Chuyển sang job tiếp theo…");
-        void executeJob(nextJob).catch(() => {});
+        lane.setActiveJob(nextJob);
+        updateStatus(remaining.length ? `Chuyển sang job tiếp theo (${remaining.length} còn lại)…` : "Chuyển sang job tiếp theo…");
+        void executeJob(laneKey, nextJob).catch(() => {});
       } else {
-        setActiveJob(null);
-        setRunning(false);
+        lane.setActiveJob(null);
+        lane.setRunning(false);
       }
     }
   }
@@ -454,15 +455,17 @@ export default function App() {
     }
 
     const job = createJobSnapshot(jobImage);
-    if (running || runQueueRef.current.length > 0) {
-      const nextQueue = [...runQueueRef.current, job];
-      setQueue(nextQueue);
-      setStatus(`Đã thêm vào hàng chờ (${nextQueue.length})`);
-      setError("");
+    const laneKey = laneKeyForKind(job.selected.kind);
+    const lane = lanes[laneKey];
+    if (lane.running || lane.queueRef.current.length > 0) {
+      const nextQueue = [...lane.queueRef.current, job];
+      lane.setQueue(nextQueue);
+      lane.setStatus(`Đã thêm vào hàng chờ (${nextQueue.length})`);
+      lane.setError("");
       return;
     }
 
-    void executeJob(job).catch(() => {});
+    void executeJob(laneKey, job).catch(() => {});
   }
 
   useEffect(() => {
@@ -481,19 +484,22 @@ export default function App() {
   }, [autoRunImports, config, discoveryLoading, fields, loadingFields, selected, settings, values]);
 
   function clearQueue() {
-    if (!runQueueRef.current.length && !autoRunImports.length) return;
-    setQueue([]);
-    setAutoRunImports([]);
-    setStatus("Đã xóa hàng chờ");
-    setError("");
+    const lane = lanes[currentLaneKey];
+    const pendingAutoRuns = selected && laneKeyForKind(selected.kind) === currentLaneKey ? autoRunImports.length : 0;
+    if (!lane.queueRef.current.length && !pendingAutoRuns) return;
+    lane.setQueue([]);
+    if (pendingAutoRuns) setAutoRunImports([]);
+    lane.setStatus("Đã xóa hàng chờ");
+    lane.setError("");
   }
 
   async function stopCurrent() {
-    if (!running && !activeJobRef.current) return;
-    setStatus("Đang dừng…");
-    abortRef.current?.abort();
-    const job = activeJobRef.current;
-    if (job?.selected?.kind === "comfy" && job.settings?.comfyUrl) {
+    const lane = lanes[currentLaneKey];
+    if (!lane.running && !lane.activeJobRef.current) return;
+    lane.setStatus("Đang dừng…");
+    lane.abortRef.current?.abort();
+    const job = lane.activeJobRef.current;
+    if (currentLaneKey === "comfy" && job?.selected?.kind === "comfy" && job.settings?.comfyUrl) {
       try {
         await interruptComfyWorkflow(job.settings.comfyUrl);
       } catch {
@@ -662,9 +668,9 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-main">
           <div className="brand"><BrandMark /><strong>aPix Builder</strong><span>Web</span></div>
-          <div className="topbar-actions"><span className="ready-dot" title={status} /><button className="square-button" onClick={() => { setSettingsDraft(settings); setSettingsOpen(true); }} aria-label="Mở Settings"><Settings size={19} /></button></div>
+          <div className="topbar-actions"><span className="ready-dot" title={currentLane.running ? currentLane.status : status} /><button className="square-button" onClick={() => { setSettingsDraft(settings); setSettingsOpen(true); }} aria-label="Mở Settings"><Settings size={19} /></button></div>
         </div>
-        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); if (!running) setStatus(`Chế độ ${modeLabelForKind(nextMode)}`); }} />
+        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); if (!lanes[laneKeyForMode(nextMode)].running) setStatus(`Chế độ ${modeLabelForKind(nextMode)}`); }} />
       </header>
 
       <main>
@@ -691,31 +697,37 @@ export default function App() {
             storageWarning={presetsStorageWarning}
           />
         ) : null}
-        <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={running} />
+        <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
         <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} workflowKind={mode} />
 
         <section className="run-section">
           <RunControls
-            running={running}
+            running={currentLane.running}
             canRun={canSubmit}
-            canCancel={running}
+            canCancel={currentLane.running}
             queueCount={queueCount}
             onRun={run}
             onCancel={stopCurrent}
             onClearQueue={clearQueue}
             onStopAll={stopAll}
             runLabel={`Chạy ${selected?.name || "workflow"}`}
-            runningLabel={activeJob?.selected?.name}
-            runningRunner={activeJob ? runnerLabelForKind(activeJob.selected.kind) : ""}
+            runningLabel={currentLane.activeJob?.selected?.name}
+            runningRunner={currentLane.activeJob ? runnerLabelForKind(currentLane.activeJob.selected.kind) : ""}
           />
-          {running && activeJob && activeJob.selected.kind !== mode ? (
+          {otherLane.running && otherLane.activeJob ? (
             <div className="queue-mode-hint">
-              Đang chạy job <strong>{runnerLabelForKind(activeJob.selected.kind)}</strong> ({activeJob.selected.name}) — tab hiện tại là {modeLabelForKind(mode)}
+              {runnerLabelForKind(otherLane.activeJob.selected.kind)} đang chạy song song: <strong>{otherLane.activeJob.selected.name}</strong>
             </div>
           ) : null}
-          {running && <div className="processing-status"><LoaderCircle className="spin" size={14} /><span>{status}</span></div>}
-          {!running && queueCount > 0 && <div className="queue-status">{queueCount} job trong hàng chờ</div>}
-          {error && <div className="error-message" role="alert">{error}</div>}
+          {currentLane.running && currentLane.status ? (
+            <div className="processing-status"><LoaderCircle className="spin" size={14} /><span>{currentLane.status}</span></div>
+          ) : null}
+          {!currentLane.running && queueCount > 0 ? (
+            <div className="queue-status">{queueCount} job trong hàng chờ</div>
+          ) : null}
+          {(currentLane.error || error) ? (
+            <div className="error-message" role="alert">{currentLane.error || error}</div>
+          ) : null}
         </section>
 
         <OutputLibrary
