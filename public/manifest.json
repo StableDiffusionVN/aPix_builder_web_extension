@@ -2,11 +2,13 @@
   "manifest_version": 3,
   "name": "aPix Builder Web Extension",
   "short_name": "aPix Builder",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Import images from any webpage and run aPix Builder templates in a Chrome side panel.",
   "permissions": [
     "contextMenus",
+    "declarativeNetRequest",
     "downloads",
+    "scripting",
     "sidePanel",
     "storage",
     "unlimitedStorage"

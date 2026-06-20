@@ -1,4 +1,37 @@
 import { buildPendingImport, MENU_IMPORT_RUN_ID } from "./contextMenuModel.js";
+import { buildImportImagePackage } from "./imageImport.js";
+import { filenameFromUrl, stagingRef } from "./imageStaging.js";
+
+const IMAGE_HEADER_RULE_IDS = [101];
+
+async function ensureImageHeaderRules() {
+  if (!chrome.declarativeNetRequest?.updateDynamicRules) return;
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds: IMAGE_HEADER_RULE_IDS,
+    addRules: [
+      {
+        id: 101,
+        priority: 1,
+        action: {
+          type: "modifyHeaders",
+          requestHeaders: [
+            {
+              header: "referer",
+              operation: "set",
+              value: "https://www.pixiv.net/"
+            }
+          ]
+        },
+        condition: {
+          urlFilter: "||pximg.net/",
+          resourceTypes: ["xmlhttprequest", "image", "other"]
+        }
+      }
+    ]
+  }).catch(error => {
+    console.warn("Không thể cài rule tải ảnh", error);
+  });
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -9,16 +42,36 @@ chrome.runtime.onInstalled.addListener(() => {
     });
   });
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  ensureImageHeaderRules();
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  ensureImageHeaderRules();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_IMPORT_RUN_ID || !info.srcUrl || !tab?.windowId) return;
-  const pendingImport = buildPendingImport(info, tab);
-  await Promise.all([
-    chrome.storage.local.set({ pendingImport }),
-    chrome.sidePanel.open({ windowId: tab.windowId })
-  ]);
-  chrome.runtime.sendMessage({ type: "APX_IMPORT_IMAGE", payload: pendingImport }).catch(() => {});
+
+  const openPanel = chrome.sidePanel.open({ windowId: tab.windowId }).catch(error => {
+    console.warn("Không thể mở side panel", error);
+  });
+  let pendingImport = buildPendingImport(info, tab);
+  try {
+    await ensureImageHeaderRules();
+    const imagePackage = await buildImportImagePackage({
+      url: info.srcUrl,
+      pageUrl: info.pageUrl || tab.url || "",
+      tabId: tab.id,
+      windowId: tab.windowId,
+      name: filenameFromUrl(info.srcUrl)
+    });
+    pendingImport = buildPendingImport(info, tab, imagePackage);
+  } catch (error) {
+    pendingImport.captureError = error.message || String(error);
+  }
+
+  await chrome.storage.local.set({ pendingImport });
+  await openPanel;
 });
 
 function uint8ArrayToBase64(bytes) {
@@ -84,19 +137,27 @@ async function handleComfyFetch(message) {
   };
 }
 
+async function handleFetchImage(message) {
+  await ensureImageHeaderRules();
+  const sourceTab = message.tabId ? await chrome.tabs.get(message.tabId).catch(() => null) : null;
+  const imagePackage = await buildImportImagePackage({
+    url: message.url,
+    pageUrl: message.pageUrl,
+    tabId: message.tabId,
+    windowId: sourceTab?.windowId || message.windowId || null,
+    name: filenameFromUrl(message.url)
+  });
+  return {
+    ok: true,
+    ...imagePackage,
+    stagingRef: imagePackage.stagingId ? stagingRef(imagePackage.stagingId) : null
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "APX_FETCH_IMAGE") {
-    fetch(message.url, { credentials: "omit", cache: "no-store" })
-      .then(async response => {
-        if (!response.ok) throw new Error(`Không thể tải ảnh (${response.status})`);
-        const blob = await response.blob();
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        sendResponse({
-          ok: true,
-          dataUrl: `data:${blob.type || "image/png"};base64,${uint8ArrayToBase64(bytes)}`,
-          mimeType: blob.type || "image/png"
-        });
-      })
+    handleFetchImage(message)
+      .then(payload => sendResponse(payload))
       .catch(error => sendResponse({ ok: false, error: error.message || String(error) }));
     return true;
   }

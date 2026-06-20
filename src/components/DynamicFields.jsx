@@ -1,16 +1,17 @@
 import { DYNAMIC_FIELD_TYPES, isDynamicFieldType, resolveDynamicFieldType } from "../lib/dynamicTypes";
-import { isModelChoiceField } from "../lib/catalog";
+import { isModelChoiceField, usesRemoteModelDiscovery } from "../lib/catalog";
 import { choiceOptionsFromField } from "../lib/menuChoices";
 import { SearchableMenuDropdown } from "./SearchableMenuDropdown";
 
-export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false }) {
+export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "" }) {
+  const remoteModelDiscovery = usesRemoteModelDiscovery(workflowKind);
   const visible = fields.filter(field => !["image", "image_mask", "file"].includes(field.ui.type));
   if (!loading && !discoveryLoading && !visible.length) return null;
 
   return (
     <section className="tool-section configure-section" aria-labelledby="configure-title">
       <h2 id="configure-title">Thiết lập</h2>
-      {(loading || discoveryLoading) && (
+      {(loading || (remoteModelDiscovery && discoveryLoading)) && (
         <div className="inline-status">
           {loading ? "Đang tải trường dữ liệu từ RunningHub…" : "Đang quét checkpoint/LoRA từ ComfyUI…"}
         </div>
@@ -19,14 +20,18 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
         {visible.map(field => {
           const type = field.ui.type;
           const choices = field.ui.choices || field.choices || [];
-          const modelChoice = isModelChoiceField(field);
+          const modelChoice = isModelChoiceField(field, { kind: workflowKind });
           const choiceField = modelChoice || (
-            ["menu", "menu-sub", "dropdown", "checkpoints", "loras", ...DYNAMIC_FIELD_TYPES].includes(type)
+            remoteModelDiscovery
+            && ["menu", "menu-sub", "dropdown", "checkpoints", "loras", ...DYNAMIC_FIELD_TYPES].includes(type)
             && choices.length
           );
 
           if (choiceField) {
             const options = choiceOptionsFromField(field, choices);
+            const usesRemoteModels = remoteModelDiscovery && (
+              field.ui.dynamic || isDynamicFieldType(type) || Boolean(resolveDynamicFieldType(field))
+            );
             return (
               <label className="field" key={field.key}>
                 <span>{field.ui.label || field.key}</span>
@@ -36,9 +41,9 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
                   onChange={nextValue => onChange(field.key, nextValue)}
                   placeholder={`Chọn ${field.ui.label || field.key}…`}
                   searchPlaceholder={`Tìm ${field.ui.label || field.key}…`}
-                  loading={discoveryLoading && (field.ui.dynamic || isDynamicFieldType(type) || Boolean(resolveDynamicFieldType(field)))}
-                  disabled={discoveryLoading && options.length === 0}
-                  emptyMessage={discoveryLoading ? "Đang tải…" : "Không có model trên server"}
+                  loading={discoveryLoading && usesRemoteModels}
+                  disabled={discoveryLoading && usesRemoteModels && options.length === 0}
+                  emptyMessage={usesRemoteModels && discoveryLoading ? "Đang tải…" : "Không có lựa chọn"}
                 />
               </label>
             );

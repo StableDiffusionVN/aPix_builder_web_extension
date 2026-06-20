@@ -64,8 +64,22 @@ export function deleteOutput(id) {
   return transact(OUTPUT_STORE, "readwrite", store => store.delete(id));
 }
 
-export function clearOutputs() {
-  return transact(OUTPUT_STORE, "readwrite", store => store.clear());
+export async function deleteOutputs(ids) {
+  const outputIds = [...new Set(ids)].filter(Boolean);
+  if (!outputIds.length) return;
+  const db = await openDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction(OUTPUT_STORE, "readwrite");
+      const store = transaction.objectStore(OUTPUT_STORE);
+      for (const id of outputIds) store.delete(id);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error("Không thể xóa output đã chọn"));
+    });
+  } finally {
+    db.close();
+  }
 }
 
 export function saveCustomCatalogItem(record) {

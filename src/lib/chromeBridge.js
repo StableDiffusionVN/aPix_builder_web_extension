@@ -1,4 +1,13 @@
+import {
+  blobFromEmbeddedImage,
+  filenameFromUrl,
+  parseStagingRef,
+  readStagedImage
+} from "../../public/imageStaging.js";
+
 export const hasChromeRuntime = () => Boolean(globalThis.chrome?.runtime?.id);
+
+const importLocks = new Set();
 
 export async function consumePendingImport() {
   if (!hasChromeRuntime() || !chrome.storage?.local) return null;
@@ -7,31 +16,123 @@ export async function consumePendingImport() {
   return pendingImport || null;
 }
 
-export function onImageImport(handler) {
-  if (!hasChromeRuntime()) return () => {};
-  const listener = message => {
-    if (message?.type === "APX_IMPORT_IMAGE" && message.payload?.url) handler(message.payload);
+export function onPendingImport(handler) {
+  if (!hasChromeRuntime() || !chrome.storage?.onChanged) return () => {};
+  const listener = (changes, areaName) => {
+    if (areaName !== "local" || !changes.pendingImport?.newValue) return;
+    handler(changes.pendingImport.newValue);
   };
-  chrome.runtime.onMessage.addListener(listener);
-  return () => chrome.runtime.onMessage.removeListener(listener);
+  chrome.storage.onChanged.addListener(listener);
+  return () => chrome.storage.onChanged.removeListener(listener);
 }
 
-export async function fetchImageAsBlob(url) {
-  if (url.startsWith("data:")) return fetch(url).then(response => response.blob());
-  if (hasChromeRuntime()) {
-    try {
-      const direct = await fetch(url, { credentials: "omit", cache: "no-store" });
-      if (direct.ok) return direct.blob();
-    } catch {
-      // Retry in the service worker for sites with unusual response policies.
-    }
-    const response = await chrome.runtime.sendMessage({ type: "APX_FETCH_IMAGE", url });
-    if (!response?.ok) throw new Error(response?.error || "Không thể import ảnh từ trang web");
-    return fetch(response.dataUrl).then(result => result.blob());
+async function resolveActiveTab() {
+  if (!hasChromeRuntime() || !chrome.tabs?.query) return { pageUrl: "", tabId: null, windowId: null };
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return { pageUrl: tab?.url || "", tabId: tab?.id ?? null, windowId: tab?.windowId ?? null };
+  } catch {
+    return { pageUrl: "", tabId: null, windowId: null };
   }
+}
+
+export async function loadImportBlob({
+  url,
+  stagingId,
+  embeddedImage,
+  pageUrl,
+  tabId,
+  windowId,
+  name,
+  allowRemoteFetch = true
+} = {}) {
+  if (embeddedImage?.base64) {
+    return {
+      blob: blobFromEmbeddedImage(embeddedImage),
+      suggestedName: name || embeddedImage.name || filenameFromUrl(embeddedImage.sourceUrl || url)
+    };
+  }
+
+  const resolvedStagingId = stagingId || parseStagingRef(url);
+  if (resolvedStagingId) {
+    try {
+      const staged = await readStagedImage(resolvedStagingId, { remove: true });
+      return {
+        blob: staged.blob,
+        suggestedName: name || staged.name || filenameFromUrl(staged.sourceUrl || url)
+      };
+    } catch (error) {
+      if (!allowRemoteFetch) throw error;
+    }
+  }
+
+  if (!allowRemoteFetch) {
+    throw new Error("Không đọc được ảnh đã staging");
+  }
+
+  if (!url) throw new Error("Không có ảnh để import");
+
+  if (url.startsWith("data:")) {
+    const blob = await fetch(url).then(response => response.blob());
+    return { blob, suggestedName: name || "web-image" };
+  }
+
+  if (hasChromeRuntime()) {
+    const tab = await resolveActiveTab();
+    const response = await chrome.runtime.sendMessage({
+      type: "APX_FETCH_IMAGE",
+      url,
+      pageUrl: pageUrl || tab.pageUrl,
+      tabId: tabId ?? tab.tabId,
+      windowId: windowId ?? tab.windowId
+    });
+    if (!response?.ok) throw new Error(response?.error || "Không thể import ảnh từ trang web");
+
+    if (response.embeddedImage?.base64) {
+      return {
+        blob: blobFromEmbeddedImage(response.embeddedImage),
+        suggestedName: name || response.embeddedImage.name || filenameFromUrl(url)
+      };
+    }
+
+    if (response.stagingId) {
+      const staged = await readStagedImage(response.stagingId, { remove: true });
+      return {
+        blob: staged.blob,
+        suggestedName: name || staged.name || filenameFromUrl(url)
+      };
+    }
+
+    throw new Error("Không thể import ảnh từ trang web");
+  }
+
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Không thể tải ảnh (${response.status})`);
-  return response.blob();
+  const blob = await response.blob();
+  return { blob, suggestedName: name || filenameFromUrl(url) };
+}
+
+export async function fetchImageAsBlob(url, options = {}) {
+  const { blob } = await loadImportBlob({
+    url,
+    stagingId: options.stagingId,
+    embeddedImage: options.embeddedImage,
+    pageUrl: options.pageUrl,
+    tabId: options.tabId,
+    windowId: options.windowId,
+    name: options.name,
+    allowRemoteFetch: options.allowRemoteFetch
+  });
+  return blob;
+}
+
+export function runExclusiveImport(requestId, task) {
+  if (!requestId) return task();
+  if (importLocks.has(requestId)) return Promise.resolve(null);
+  importLocks.add(requestId);
+  return task().finally(() => {
+    importLocks.delete(requestId);
+  });
 }
 
 export async function downloadBlob(blob, filename) {

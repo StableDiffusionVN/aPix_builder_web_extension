@@ -5,11 +5,15 @@ import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarge
 import { collectComfyOutputImages } from "../src/services/comfy";
 import { enrichFieldsWithDiscovery } from "../src/services/comfyDiscovery";
 import { defaultValues, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
+import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
 import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles } from "../src/lib/templateImport";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppInfoCard } from "../src/components/AppInfoCard";
+import { OutputLibrary } from "../src/components/OutputLibrary";
 import { buildPendingImport, MENU_IMPORT_RUN_ID } from "../public/contextMenuModel";
+import { buildImageFetchAttempts, normalizeImageUrl } from "../public/imageFetch.js";
+import { parseStagingRef, stagingRef, embeddedImageFromBuffer, blobFromEmbeddedImage } from "../public/imageStaging.js";
 import { adjacentPreviewIndex } from "../src/lib/lightboxNavigation";
 
 describe("lightbox navigation", () => {
@@ -32,15 +36,50 @@ describe("context menu imports", () => {
   it("marks import-and-run requests for the side panel", () => {
     const pending = buildPendingImport(
       { srcUrl: "https://example.com/image.png", pageUrl: "https://example.com/gallery" },
-      { url: "https://example.com/fallback" }
+      { id: 42, windowId: 7, url: "https://example.com/fallback" },
+      { stagingId: "stage-1" }
     );
     expect(pending).toMatchObject({
       url: "https://example.com/image.png",
       pageUrl: "https://example.com/gallery",
+      tabId: 42,
+      windowId: 7,
+      stagingId: "stage-1",
       autoRun: true
     });
     expect(pending.requestId).toBeTruthy();
     expect(pending.createdAt).toEqual(expect.any(Number));
+  });
+});
+
+describe("image fetch strategies", () => {
+  it("builds referer-aware fetch attempts for hotlink-protected images", () => {
+    const attempts = buildImageFetchAttempts(
+      "https://cdn.example.com/photo.jpg",
+      "https://gallery.example.com/item/1"
+    );
+    expect(attempts.length).toBeGreaterThan(2);
+    expect(attempts.some(init => init.headers?.Referer === "https://gallery.example.com/item/1")).toBe(true);
+    expect(attempts.some(init => init.credentials === "include")).toBe(true);
+  });
+
+  it("normalizes relative image URLs against the page URL", () => {
+    expect(normalizeImageUrl("/assets/a.png", "https://example.com/page")).toBe("https://example.com/assets/a.png");
+  });
+
+  it("builds staging refs for intermediate image storage", () => {
+    expect(stagingRef("abc-123")).toBe("apix-staging://abc-123");
+    expect(parseStagingRef("apix-staging://abc-123")).toBe("abc-123");
+  });
+
+  it("embeds captured image bytes for pending imports", () => {
+    const embedded = embeddedImageFromBuffer(new Uint8Array([137, 80, 78, 71]).buffer, {
+      mimeType: "image/png",
+      name: "sample.png",
+      sourceUrl: "https://example.com/sample.png"
+    });
+    expect(embedded?.mimeType).toBe("image/png");
+    expect(blobFromEmbeddedImage(embedded).size).toBe(4);
   });
 });
 
@@ -49,6 +88,51 @@ describe("image helpers", () => {
     expect(fileStem("my photo.final.jpg")).toBe("my-photo-final");
     expect(extensionForType("image/jpeg")).toBe("jpg");
     expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MB");
+  });
+});
+
+describe("output batch actions", () => {
+  const output = {
+    id: "output-1",
+    blob: new Blob(["image"], { type: "image/png" }),
+    name: "result.png",
+    width: 1024,
+    height: 1024,
+    size: 5,
+    createdAt: 0
+  };
+
+  it("renders compact selected-only download and delete controls", () => {
+    const html = renderToStaticMarkup(OutputLibrary({
+      outputs: [output],
+      selected: new Set([output.id]),
+      onToggle: () => {},
+      onToggleAll: () => {},
+      onDownload: () => {},
+      onDownloadSelected: () => {},
+      onDelete: () => {},
+      onDeleteSelected: () => {},
+      onView: () => {}
+    }));
+    expect(html).toContain('aria-label="Tải ảnh đã chọn (1)"');
+    expect(html).toContain('aria-label="Xóa ảnh đã chọn (1)"');
+    expect(html).not.toContain("Tải các ảnh đã chọn");
+    expect(html).not.toContain("Xóa tất cả output");
+  });
+
+  it("disables both batch controls when nothing is selected", () => {
+    const html = renderToStaticMarkup(OutputLibrary({
+      outputs: [output],
+      selected: new Set(),
+      onToggle: () => {},
+      onToggleAll: () => {},
+      onDownload: () => {},
+      onDownloadSelected: () => {},
+      onDelete: () => {},
+      onDeleteSelected: () => {},
+      onView: () => {}
+    }));
+    expect(html.match(/output-batch-action[^>]*disabled/g)).toHaveLength(2);
   });
 });
 
@@ -181,6 +265,49 @@ describe("ComfyUI field discovery", () => {
     expect(enriched[1].ui.choices).toEqual(["sample-lora.safetensors"]);
     expect(enriched[1].ui.dynamic).toBe(true);
     expect(enriched[2].ui.choices).toBeUndefined();
+  });
+
+  it("does not treat RH workflow string checkpoint/lora fields as model pickers", () => {
+    const checkpoint = {
+      key: "checkpoint",
+      id: "46-ckpt_name",
+      ui: { type: "string", label: "Checkpoint", value: "Flux2-klein-9b-fp8.safetensors" }
+    };
+    const lora = {
+      key: "lora_klein",
+      id: "47-lora_name",
+      ui: { type: "string", label: "Lora Klein", value: "SDVN_Make_cosplay_klein_9b_v1.safetensors" }
+    };
+    const loraMenu = {
+      key: "lora_upscale",
+      id: "6-lora_name",
+      ui: {
+        type: "menu",
+        label: "Lora Upscale",
+        choices: ["Default:upsacle_200_9b_8k.safetensors"],
+        value: "upsacle_200_9b_8k.safetensors"
+      }
+    };
+
+    expect(resolveDynamicFieldType(checkpoint)).toBe("");
+    expect(resolveDynamicFieldType(lora)).toBe("");
+    expect(isModelChoiceField(checkpoint)).toBe(false);
+    expect(isModelChoiceField(lora)).toBe(false);
+    expect(isModelChoiceField(loraMenu)).toBe(true);
+    expect(isModelChoiceField(checkpoint, { kind: "runninghub-workflow" })).toBe(false);
+    expect(isModelChoiceField(lora, { kind: "runninghub-workflow" })).toBe(false);
+    expect(isModelChoiceField(loraMenu, { kind: "runninghub-workflow" })).toBe(true);
+
+    const defaults = defaultValues([checkpoint, lora, loraMenu], { kind: "runninghub-workflow" });
+    expect(defaults.checkpoint).toBe("Flux2-klein-9b-fp8.safetensors");
+    expect(defaults.lora_klein).toBe("SDVN_Make_cosplay_klein_9b_v1.safetensors");
+
+    const discovery = { dynamicChoices: { loras: ["server-lora.safetensors"] } };
+    const enriched = enrichFieldsWithDiscovery([checkpoint, lora, loraMenu], discovery);
+    expect(enriched[0]).toEqual(checkpoint);
+    expect(enriched[1]).toEqual(lora);
+    expect(enriched[2].ui.dynamic).toBe(true);
+    expect(enriched[2].ui.choices).toEqual(["server-lora.safetensors"]);
   });
 });
 

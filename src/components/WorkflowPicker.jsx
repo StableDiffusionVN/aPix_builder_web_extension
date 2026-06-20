@@ -1,4 +1,4 @@
-import { FolderInput, LoaderCircle, Plus } from "lucide-react";
+import { FolderInput, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { AppInfoCard } from "./AppInfoCard";
 
@@ -33,10 +33,21 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
         <select aria-label={copy.title} value={selected?.id || ""} onChange={event => onSelect(items.find(item => item.id === event.target.value))}>
           {items.map(item => <option key={item.id} value={item.id}>{item.custom ? "[Custom] " : ""}{item.name}</option>)}
         </select>
+        {selected?.custom ? (
+          <button
+            type="button"
+            className="square-button danger-text template-delete-button"
+            onClick={() => onDeleteCustom(selected)}
+            aria-label={`Xóa ${selected.name}`}
+            title="Xóa custom"
+          >
+            <Trash2 size={16} />
+          </button>
+        ) : null}
       </div>
       {!isAppMode && selected && <div className="selected-template-meta"><span>{selected.description}</span>{selected.custom && <strong>Custom</strong>}</div>}
 
-      {isAppMode && <AppInfoCard info={appInfo} removable={Boolean(selected?.custom)} onRemove={() => onDeleteCustom(selected)} />}
+      {isAppMode && <AppInfoCard info={appInfo} />}
 
       {isAppMode && (
         <div className="custom-app-row">

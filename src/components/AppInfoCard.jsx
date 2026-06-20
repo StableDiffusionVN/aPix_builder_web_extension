@@ -1,4 +1,4 @@
-import { Lock, Trash2 } from "lucide-react";
+import { Lock } from "lucide-react";
 
 function coverUrl(info) {
   const cover = info?.covers?.[0];
@@ -13,7 +13,7 @@ function tagNames(info) {
     .slice(0, 3);
 }
 
-export function AppInfoCard({ info, removable = false, onRemove }) {
+export function AppInfoCard({ info }) {
   if (!info?.webappName) return null;
   const thumbnail = coverUrl(info);
   const tags = tagNames(info);
@@ -28,7 +28,6 @@ export function AppInfoCard({ info, removable = false, onRemove }) {
         <span className="app-info-id">ID {info.webappId}</span>
         {!!tags.length && <div className="app-info-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
       </div>
-      {removable && <button className="square-button danger-text app-info-remove" onClick={onRemove} aria-label={`Xóa ${info.webappName}`}><Trash2 size={16} /></button>}
     </article>
   );
 }

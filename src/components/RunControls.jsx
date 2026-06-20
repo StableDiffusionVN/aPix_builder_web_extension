@@ -10,7 +10,9 @@ export function RunControls({
   onCancel,
   onClearQueue,
   onStopAll,
-  runLabel = "Chạy workflow"
+  runLabel = "Chạy workflow",
+  runningLabel = "",
+  runningRunner = ""
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -50,7 +52,9 @@ export function RunControls({
         {running ? <Loader2 className="spin" size={17} /> : <Play size={18} fill="currentColor" />}
         <span>
           {running
-            ? `Hàng chờ${queueCount ? ` (${queueCount})` : ""}`
+            ? (runningLabel
+              ? `${runningRunner || "Đang chạy"}: ${runningLabel}${queueCount ? ` (+${queueCount} chờ)` : ""}`
+              : `Hàng chờ${queueCount ? ` (${queueCount})` : ""}`)
             : runLabel}
         </span>
       </button>

@@ -13,11 +13,25 @@ const TEMPLATE_DESCRIPTIONS = {
 };
 
 const CHOICE_FIELD_TYPES = new Set(["menu", "menu-sub", "dropdown", "checkpoints", "loras"]);
+const MENU_FIELD_TYPES = new Set(["menu", "menu-sub", "dropdown"]);
 
-export function isModelChoiceField(field) {
+function fieldChoices(field) {
+  return field?.ui?.choices || field?.choices || [];
+}
+
+export function usesRemoteModelDiscovery(kind) {
+  return kind === "comfy";
+}
+
+export function isModelChoiceField(field, { kind } = {}) {
   if (!field) return false;
+  const choices = fieldChoices(field);
+  if (kind === "runninghub-workflow" || kind === "runninghub-app") {
+    if (field.ui?.dynamic || isDynamicFieldType(field.ui?.type)) return true;
+    return MENU_FIELD_TYPES.has(field.ui?.type) && choices.length > 0;
+  }
   if (field.ui?.dynamic || isDynamicFieldType(field.ui?.type) || resolveDynamicFieldType(field)) return true;
-  return CHOICE_FIELD_TYPES.has(field.ui?.type) && Boolean((field.ui?.choices || field.choices || []).length);
+  return CHOICE_FIELD_TYPES.has(field.ui?.type) && choices.length > 0;
 }
 
 export function resolveModelFieldValue(field, choices = field?.ui?.choices || field?.choices || []) {
@@ -64,10 +78,10 @@ export function flattenConfigInputs(config) {
     .filter(item => item.id && item.ui.type !== "note" && item.ui.type !== "markdown");
 }
 
-export function defaultValues(fields) {
+export function defaultValues(fields, { kind } = {}) {
   return Object.fromEntries(fields.map(field => {
-    if (isModelChoiceField(field)) {
-      const choices = field.ui.choices || field.choices || [];
+    if (isModelChoiceField(field, { kind })) {
+      const choices = fieldChoices(field);
       if (choices.length) return [field.key, resolveModelFieldValue(field, choices)];
     }
     return [field.key, field.ui.value ?? (field.ui.type === "seed" ? "random_seed" : "")];

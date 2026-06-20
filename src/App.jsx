@@ -9,15 +9,25 @@ import { OutputLibrary } from "./components/OutputLibrary";
 import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
-import { consumePendingImport, downloadBlob, fetchImageAsBlob, onImageImport, readSettings, writeSettings } from "./lib/chromeBridge";
+import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, runExclusiveImport, writeSettings } from "./lib/chromeBridge";
 import { defaultValues, flattenConfigInputs, loadCatalog, loadTemplateConfig } from "./lib/catalog";
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
-import { clearInput, clearOutputs, deleteCustomCatalogItem, deleteOutput, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
+import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
 import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
+
+function runnerLabelForKind(kind) {
+  return kind === "comfy" ? "ComfyUI" : "RunningHub";
+}
+
+function modeLabelForKind(kind) {
+  if (kind === "comfy") return "ComfyUI";
+  if (kind === "runninghub-workflow") return "RH Workflow";
+  return "RH App";
+}
 
 function nodeToField(node) {
   const type = String(node.fieldType || "STRING").toUpperCase();
@@ -60,6 +70,7 @@ export default function App() {
   const [importingFolder, setImportingFolder] = useState(false);
   const [scanningApp, setScanningApp] = useState(false);
   const [running, setRunning] = useState(false);
+  const [activeJob, setActiveJob] = useState(null);
   const [runQueue, setRunQueue] = useState([]);
   const [autoRunImports, setAutoRunImports] = useState([]);
   const [previewOutput, setPreviewOutput] = useState(null);
@@ -83,13 +94,22 @@ export default function App() {
     }
   }, []);
 
-  const importFromUrl = useCallback(async url => {
+  const importFromUrl = useCallback(async (url, options = {}) => {
     setError("");
     setStatus("Đang import ảnh từ trang web…");
     try {
-      const blob = await fetchImageAsBlob(url);
-      let name = "web-image";
-      try { name = new URL(url).pathname.split("/").filter(Boolean).pop() || name; } catch { /* data URL */ }
+      const { blob, suggestedName } = await loadImportBlob({
+        url,
+        stagingId: options.stagingId,
+        embeddedImage: options.embeddedImage,
+        pageUrl: options.pageUrl,
+        tabId: options.tabId,
+        windowId: options.windowId,
+        name: options.name,
+        allowRemoteFetch: options.allowRemoteFetch !== false
+      });
+      let name = suggestedName || "web-image";
+      try { if (!suggestedName) name = new URL(url).pathname.split("/").filter(Boolean).pop() || name; } catch { /* data URL */ }
       const record = await normalizeImageRecord(blob, name);
       await saveInput(record);
       setImage(record);
@@ -103,24 +123,41 @@ export default function App() {
   }, []);
 
   const handleExternalImport = useCallback(async payload => {
-    if (!payload?.url) return;
+    if (!payload?.url && !payload?.embeddedImage && !payload?.stagingId) return;
     const requestId = payload.requestId || `${payload.url}:${payload.createdAt || "legacy"}`;
-    if (handledImportIdsRef.current.has(requestId)) return;
-    handledImportIdsRef.current.add(requestId);
-    if (handledImportIdsRef.current.size > 100) {
-      const oldestRequestId = handledImportIdsRef.current.values().next().value;
-      handledImportIdsRef.current.delete(oldestRequestId);
-    }
 
-    const importedImage = await importFromUrl(payload.url);
-    if (importedImage && payload.autoRun) {
-      setAutoRunImports(current => [...current, {
-        requestId,
-        createdAt: Number(payload.createdAt) || Date.now(),
-        image: importedImage
-      }].sort((left, right) => left.createdAt - right.createdAt));
-      setStatus("Đã nhận ảnh, đang chuẩn bị chạy…");
-    }
+    return runExclusiveImport(requestId, async () => {
+      if (handledImportIdsRef.current.has(requestId)) return null;
+      handledImportIdsRef.current.add(requestId);
+      if (handledImportIdsRef.current.size > 100) {
+        const oldestRequestId = handledImportIdsRef.current.values().next().value;
+        handledImportIdsRef.current.delete(oldestRequestId);
+      }
+
+      if (payload.captureError && !payload.embeddedImage && !payload.stagingId) {
+        setError(payload.captureError);
+        setStatus("Import thất bại");
+        return null;
+      }
+
+      const importedImage = await importFromUrl(payload.url, {
+        stagingId: payload.stagingId,
+        embeddedImage: payload.embeddedImage,
+        pageUrl: payload.pageUrl,
+        tabId: payload.tabId,
+        windowId: payload.windowId,
+        allowRemoteFetch: !payload.stagingId && !payload.embeddedImage
+      });
+      if (importedImage && payload.autoRun) {
+        setAutoRunImports(current => [...current, {
+          requestId,
+          createdAt: Number(payload.createdAt) || Date.now(),
+          image: importedImage
+        }].sort((left, right) => left.createdAt - right.createdAt));
+        setStatus("Đã nhận ảnh, đang chuẩn bị chạy…");
+      }
+      return importedImage;
+    });
   }, [importFromUrl]);
 
   useEffect(() => {
@@ -133,8 +170,16 @@ export default function App() {
       setSettings(savedSettings);
       setSettingsDraft(savedSettings);
     }).catch(nextError => setError(nextError.message));
-    consumePendingImport().then(handleExternalImport);
-    return onImageImport(handleExternalImport);
+    consumePendingImport().then(payload => {
+      if (payload) {
+        chrome.storage.local.remove("pendingImport").catch(() => {});
+        handleExternalImport(payload);
+      }
+    });
+    return onPendingImport(payload => {
+      chrome.storage.local.remove("pendingImport").catch(() => {});
+      handleExternalImport(payload);
+    });
   }, [handleExternalImport]);
 
   useEffect(() => {
@@ -174,7 +219,7 @@ export default function App() {
             setConfig({ app: { name: definition.name }, appNodes: definition.nodes });
             setAppInfo(definition.info);
             setFields(nextFields);
-            setValues(defaultValues(nextFields));
+            setValues(defaultValues(nextFields, { kind: selected.kind }));
             if (selected.custom) {
               const refreshed = { ...selected, name: definition.name, appInfo: definition.info };
               await saveCustomCatalogItem(refreshed);
@@ -189,7 +234,7 @@ export default function App() {
               if (!cancelled) {
                 setConfig(nextConfig);
                 setFields(nextFields);
-                setValues(defaultValues(nextFields));
+                setValues(defaultValues(nextFields, { kind: selected.kind }));
               }
               return;
             }
@@ -206,7 +251,7 @@ export default function App() {
           if (!cancelled) {
             setConfig(nextConfig);
             setFields(nextFields);
-            setValues(defaultValues(nextFields));
+            setValues(defaultValues(nextFields, { kind: selected.kind }));
           }
         }
       } catch (nextError) {
@@ -219,9 +264,10 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selected, settings.runningHubApiKey, settings.comfyUrl]);
 
+  const awaitingModelDiscovery = selected?.kind === "comfy" && discoveryLoading;
   const canSubmit = useMemo(
-    () => Boolean(image && selected && !loadingFields && !discoveryLoading),
-    [image, selected, loadingFields, discoveryLoading]
+    () => Boolean(image && selected && !loadingFields && !awaitingModelDiscovery),
+    [image, selected, loadingFields, awaitingModelDiscovery]
   );
   const queueCount = runQueue.length + autoRunImports.length;
 
@@ -284,6 +330,7 @@ export default function App() {
 
     setError("");
     setRunning(true);
+    setActiveJob(job);
     activeJobRef.current = job;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -291,7 +338,8 @@ export default function App() {
     const queueAhead = runQueueRef.current.length;
 
     try {
-      if (queueAhead) setStatus(`Đang chạy (${queueAhead} trong hàng chờ)…`);
+      setStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý…`);
+      if (queueAhead) setStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý (${queueAhead} trong hàng chờ)…`);
 
       let results;
       if (job.selected.kind === "comfy") {
@@ -339,9 +387,11 @@ export default function App() {
       const [nextJob, ...remaining] = runQueueRef.current;
       setQueue(remaining);
       if (nextJob) {
+        setActiveJob(nextJob);
         setStatus(remaining.length ? `Chuyển sang job tiếp theo (${remaining.length} còn lại)…` : "Chuyển sang job tiếp theo…");
         void executeJob(nextJob).catch(() => {});
       } else {
+        setActiveJob(null);
         setRunning(false);
       }
     }
@@ -376,7 +426,7 @@ export default function App() {
       setError("Nhập RunningHub API Key để chạy ảnh từ menu chuột phải");
       return;
     }
-    if (!config || loadingFields || discoveryLoading) return;
+    if (!config || loadingFields || (selected.kind === "comfy" && discoveryLoading)) return;
 
     const [nextImport] = autoRunImports;
     setAutoRunImports(current => current.slice(1));
@@ -538,9 +588,11 @@ export default function App() {
     setChecked(current => { const next = new Set(current); next.delete(id); return next; });
   }
 
-  async function removeAllOutputs() {
-    await clearOutputs();
-    setOutputs([]);
+  async function removeSelectedOutputs() {
+    if (!checked.size) return;
+    const selectedIds = new Set(checked);
+    await deleteOutputs(selectedIds);
+    setOutputs(current => current.filter(item => !selectedIds.has(item.id)));
     setChecked(new Set());
   }
 
@@ -564,7 +616,7 @@ export default function App() {
           <div className="brand"><BrandMark /><strong>aPix Builder</strong><span>Web</span></div>
           <div className="topbar-actions"><span className="ready-dot" title={status} /><button className="square-button" onClick={() => { setSettingsDraft(settings); setSettingsOpen(true); }} aria-label="Mở Settings"><Settings size={19} /></button></div>
         </div>
-        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); setStatus(`Chế độ ${nextMode === "comfy" ? "ComfyUI" : nextMode === "runninghub-workflow" ? "RH Workflow" : "RH App"}`); }} />
+        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); if (!running) setStatus(`Chế độ ${modeLabelForKind(nextMode)}`); }} />
       </header>
 
       <main>
@@ -581,7 +633,7 @@ export default function App() {
           scanningApp={scanningApp}
         />
         <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={running} />
-        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} />
+        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} workflowKind={mode} />
 
         <section className="run-section">
           <RunControls
@@ -594,7 +646,14 @@ export default function App() {
             onClearQueue={clearQueue}
             onStopAll={stopAll}
             runLabel={`Chạy ${selected?.name || "workflow"}`}
+            runningLabel={activeJob?.selected?.name}
+            runningRunner={activeJob ? runnerLabelForKind(activeJob.selected.kind) : ""}
           />
+          {running && activeJob && activeJob.selected.kind !== mode ? (
+            <div className="queue-mode-hint">
+              Đang chạy job <strong>{runnerLabelForKind(activeJob.selected.kind)}</strong> ({activeJob.selected.name}) — tab hiện tại là {modeLabelForKind(mode)}
+            </div>
+          ) : null}
           {running && <div className="processing-status"><LoaderCircle className="spin" size={14} /><span>{status}</span></div>}
           {!running && queueCount > 0 && <div className="queue-status">{queueCount} job trong hàng chờ</div>}
           {error && <div className="error-message" role="alert">{error}</div>}
@@ -608,7 +667,7 @@ export default function App() {
           onDownload={output => downloadBlob(output.blob, output.name)}
           onDownloadSelected={async () => { for (const output of outputs.filter(item => checked.has(item.id))) await downloadBlob(output.blob, output.name); }}
           onDelete={removeOutput}
-          onClear={removeAllOutputs}
+          onDeleteSelected={removeSelectedOutputs}
           onView={openPreview}
         />
       </main>

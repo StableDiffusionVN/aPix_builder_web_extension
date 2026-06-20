@@ -99,8 +99,31 @@ export function inferDynamicTypeFromFieldId(id) {
   return "";
 }
 
+const STATIC_FIELD_TYPES = new Set([
+  "string",
+  "text",
+  "int",
+  "float",
+  "number",
+  "boolean",
+  "seed",
+  "image",
+  "image_mask",
+  "file",
+  "note",
+  "markdown"
+]);
+
+const CHOICE_FIELD_TYPES = new Set(["menu", "menu-sub", "dropdown"]);
+
 export function resolveDynamicFieldType(field) {
-  return canonicalDynamicType(field?.ui?.type) || inferDynamicTypeFromFieldId(field?.id);
+  const explicitType = String(field?.ui?.type || "").trim().toLowerCase();
+  const canonical = canonicalDynamicType(explicitType);
+  if (canonical) return canonical;
+  if (STATIC_FIELD_TYPES.has(explicitType)) return "";
+  if (CHOICE_FIELD_TYPES.has(explicitType)) return inferDynamicTypeFromFieldId(field?.id);
+  if (!explicitType) return inferDynamicTypeFromFieldId(field?.id);
+  return "";
 }
 
 export function dynamicFieldChoices(discovery, type) {

@@ -31,7 +31,8 @@ function OutputRow({ output, selected, onToggle, onDownload, onDelete, onView })
   );
 }
 
-export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDownload, onDownloadSelected, onDelete, onClear, onView }) {
+export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDownload, onDownloadSelected, onDelete, onDeleteSelected, onView }) {
+  const selectedCount = selected.size;
   return (
     <section className="tool-section output-section" aria-labelledby="outputs-title">
       <div className="section-heading-row">
@@ -39,31 +40,41 @@ export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDown
         {!!outputs.length && (
           <div className="output-heading-actions">
             {outputs.length > 1 && <label className="select-all"><input type="checkbox" checked={selected.size === outputs.length} onChange={onToggleAll} /> Chọn tất cả</label>}
-            <button className="clear-outputs" onClick={onClear} aria-label="Xóa tất cả output"><Trash2 size={14} /></button>
+            <button
+              className="output-batch-action"
+              onClick={onDownloadSelected}
+              disabled={!selectedCount}
+              aria-label={`Tải ảnh đã chọn (${selectedCount})`}
+              title="Tải ảnh đã chọn"
+            >
+              <Download size={14} />
+            </button>
+            <button
+              className="output-batch-action danger-text"
+              onClick={onDeleteSelected}
+              disabled={!selectedCount}
+              aria-label={`Xóa ảnh đã chọn (${selectedCount})`}
+              title="Xóa ảnh đã chọn"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         )}
       </div>
       {!outputs.length && <div className="empty-output">Output sẽ được lưu trong extension sau khi workflow hoàn tất.</div>}
-      {!!outputs.length && (
-        <>
-          <div className="output-list">
-            {outputs.map(output => (
-              <OutputRow
-                key={output.id}
-                output={output}
-                selected={selected.has(output.id)}
-                onToggle={onToggle}
-                onDownload={onDownload}
-                onDelete={onDelete}
-                onView={onView}
-              />
-            ))}
-          </div>
-          {outputs.length > 1 && <button className="download-selected" onClick={onDownloadSelected} disabled={!selected.size}>
-            <Download size={18} /> Tải các ảnh đã chọn ({selected.size})
-          </button>}
-        </>
-      )}
+      {!!outputs.length && <div className="output-list">
+        {outputs.map(output => (
+          <OutputRow
+            key={output.id}
+            output={output}
+            selected={selected.has(output.id)}
+            onToggle={onToggle}
+            onDownload={onDownload}
+            onDelete={onDelete}
+            onView={onView}
+          />
+        ))}
+      </div>}
     </section>
   );
 }
