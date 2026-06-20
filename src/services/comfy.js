@@ -1,8 +1,61 @@
+import { blobToBase64, comfyFetch } from "../lib/comfyBridge.js";
+import { buildComfyUrlCandidates, parseComfyTarget } from "../lib/comfyTarget.js";
 import { fetchWithRetry } from "../lib/fetchRetry.js";
 
-function normalizeTarget(raw) {
-  const value = String(raw || "http://127.0.0.1:8188").trim().replace(/\/+$/, "");
-  return /^https?:\/\//i.test(value) ? value : `http://${value}`;
+export { buildComfyUrlCandidates, parseComfyTarget as normalizeTarget } from "../lib/comfyTarget.js";
+
+const HEALTH_PATHS = ["/system_stats", "/features", "/queue"];
+const API_PREFIXES = ["", "/api"];
+
+let resolvedSession = null;
+
+export function resetComfySession() {
+  resolvedSession = null;
+}
+
+function formatComfyConnectionError(error, target) {
+  const message = String(error?.message || error || "");
+  if (/credentials|cannot be constructed from a url/i.test(message)) {
+    return "URL ComfyUI có user/password không hợp lệ cho trình duyệt. Dùng dạng https://user:pass@host hoặc host:user:pass.";
+  }
+  if (/failed to fetch|networkerror|network error/i.test(message)) {
+    return "Không kết nối được ComfyUI. Kiểm tra ComfyUI đang chạy, URL đúng (vd. http://127.0.0.1:8188), và dùng --listen nếu kết nối từ máy khác.";
+  }
+  return message || `Không kết nối được ComfyUI tại ${target.label}`;
+}
+
+async function probeComfyEndpoint(url, authHeaders, signal) {
+  const response = await comfyFetch(url, { signal, authHeaders });
+  return response.ok;
+}
+
+export async function resolveComfySession(url, signal) {
+  const target = parseComfyTarget(url);
+  if (resolvedSession?.input === target.input) return resolvedSession;
+
+  let lastError = null;
+  for (const baseUrl of buildComfyUrlCandidates(target)) {
+    for (const apiPrefix of API_PREFIXES) {
+      for (const path of HEALTH_PATHS) {
+        try {
+          if (await probeComfyEndpoint(`${baseUrl}${apiPrefix}${path}`, target.authHeaders, signal)) {
+            resolvedSession = {
+              input: target.input,
+              httpBase: baseUrl,
+              apiPrefix,
+              authHeaders: target.authHeaders
+            };
+            return resolvedSession;
+          }
+        } catch (error) {
+          lastError = error;
+          if (signal?.aborted || error?.name === "AbortError") throw error;
+        }
+      }
+    }
+  }
+
+  throw new Error(formatComfyConnectionError(lastError, target));
 }
 
 async function assertOk(response, label) {
@@ -20,16 +73,23 @@ function delay(ms, signal) {
   });
 }
 
-async function uploadImage(baseUrl, image, signal) {
-  const form = new FormData();
+async function uploadImage(session, image, signal) {
   const name = `apix_web_${Date.now()}_${image.name || "input.png"}`;
-  form.append("image", image.blob, name);
-  form.append("type", "input");
-  form.append("overwrite", "true");
-  const response = await assertOk(await fetch(`${baseUrl}/upload/image`, {
+  const response = await assertOk(await comfyFetch(`${session.httpBase}${session.apiPrefix}/upload/image`, {
     method: "POST",
-    body: form,
-    signal
+    signal,
+    authHeaders: session.authHeaders,
+    multipart: [
+      {
+        name: "image",
+        file: true,
+        filename: name,
+        mimeType: image.blob.type || "image/png",
+        base64: await blobToBase64(image.blob)
+      },
+      { name: "type", value: "input" },
+      { name: "overwrite", value: "true" }
+    ]
   }), "ComfyUI upload thất bại");
   return response.json();
 }
@@ -58,14 +118,35 @@ function assignValue(workflow, id, value) {
   }
 }
 
+export async function interruptComfyWorkflow(url) {
+  const session = resolvedSession || await resolveComfySession(url);
+  const response = await comfyFetch(`${session.httpBase}${session.apiPrefix}/interrupt`, {
+    method: "POST",
+    authHeaders: session.authHeaders
+  });
+  if (!response.ok) {
+    throw new Error(`ComfyUI interrupt thất bại: ${response.status}`);
+  }
+}
+
 export async function testComfyConnection(url, signal) {
-  const baseUrl = normalizeTarget(url);
-  await assertOk(await fetch(`${baseUrl}/system_stats`, { signal }), "Không kết nối được ComfyUI");
+  await resolveComfySession(url, signal);
   return true;
 }
 
-export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkflow, fields, values, image, signal, onStatus }) {
-  const baseUrl = normalizeTarget(url);
+export function collectComfyOutputImages(config, historyEntry) {
+  const outputIds = Object.values(config?.output || {}).map(item => String(item.id));
+  const images = [];
+  for (const nodeId of outputIds) {
+    for (const image of historyEntry?.outputs?.[nodeId]?.images || []) {
+      images.push({ ...image, nodeId });
+    }
+  }
+  return images;
+}
+
+export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkflow, config, fields, values, image, signal, onStatus }) {
+  const session = await resolveComfySession(url, signal);
   let workflow;
   if (inlineWorkflow) {
     workflow = typeof structuredClone === "function"
@@ -82,7 +163,7 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
     if (["image", "image_mask", "file"].includes(type)) {
       if (!uploaded) {
         onStatus?.("Đang tải ảnh lên ComfyUI…");
-        uploaded = await uploadImage(baseUrl, image, signal);
+        uploaded = await uploadImage(session, image, signal);
       }
       assignValue(workflow, field.id, uploaded.name || uploaded.filename || uploaded.image);
       continue;
@@ -93,19 +174,22 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
   }
 
   onStatus?.("Đang đưa workflow vào hàng đợi…");
-  const queuedResponse = await assertOk(await fetch(`${baseUrl}/prompt`, {
+  const queuedResponse = await assertOk(await comfyFetch(`${session.httpBase}${session.apiPrefix}/prompt`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ prompt: workflow, client_id: crypto.randomUUID() }),
-    signal
+    json: { prompt: workflow, client_id: crypto.randomUUID() },
+    signal,
+    authHeaders: session.authHeaders
   }), "ComfyUI từ chối workflow");
   const queued = await queuedResponse.json();
   if (!queued.prompt_id) throw new Error("ComfyUI không trả về prompt_id");
 
-  const history = await waitForHistory(baseUrl, queued.prompt_id, signal, onStatus);
+  const history = await waitForHistory(session, queued.prompt_id, signal, onStatus);
   const entry = history[queued.prompt_id];
-  const images = Object.values(entry?.outputs || {}).flatMap(output => output.images || []);
-  if (!images.length) throw new Error("Workflow hoàn tất nhưng không có output ảnh");
+  const images = collectComfyOutputImages(config, entry);
+  if (!images.length) {
+    const status = entry?.status ? ` Status: ${JSON.stringify(entry.status)}` : "";
+    throw new Error(`Workflow hoàn tất nhưng không có ảnh tại output node trong template.${status}`);
+  }
 
   return Promise.all(images.map(async (output, index) => {
     const query = new URLSearchParams({
@@ -113,8 +197,12 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
       subfolder: output.subfolder || "",
       type: output.type || "output"
     });
-    const response = await fetchWithRetry(`${baseUrl}/view?${query}`, {
+    const response = await fetchWithRetry(`${session.httpBase}${session.apiPrefix}/view?${query}`, {
       signal,
+      fetchFn: (targetUrl, options) => comfyFetch(targetUrl, {
+        ...options,
+        authHeaders: session.authHeaders
+      }),
       onRetry: ({ attempt }) => {
         onStatus?.(`Đang thử tải lại output ComfyUI (${attempt})…`);
       }
@@ -124,10 +212,16 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
   }));
 }
 
-async function waitForHistory(baseUrl, promptId, signal, onStatus) {
+async function waitForHistory(session, promptId, signal, onStatus) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20 * 60 * 1000) {
-    const response = await assertOk(await fetch(`${baseUrl}/history/${promptId}`, { signal }), "Không đọc được ComfyUI history");
+    const response = await assertOk(
+      await comfyFetch(`${session.httpBase}${session.apiPrefix}/history/${promptId}`, {
+        signal,
+        authHeaders: session.authHeaders
+      }),
+      "Không đọc được ComfyUI history"
+    );
     const history = await response.json();
     if (history[promptId]) return history;
     onStatus?.("ComfyUI đang xử lý…");

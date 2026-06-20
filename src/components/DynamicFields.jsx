@@ -1,33 +1,49 @@
-function displayChoice(choice, field) {
-  const value = typeof choice === "object" ? choice.value ?? choice.label ?? choice.name : choice;
-  const text = String(value ?? "");
-  return field.ui.menuLabelSyntax && text.includes(":") ? text.split(":")[0] : text;
-}
+import { DYNAMIC_FIELD_TYPES, isDynamicFieldType, resolveDynamicFieldType } from "../lib/dynamicTypes";
+import { isModelChoiceField } from "../lib/catalog";
+import { choiceOptionsFromField } from "../lib/menuChoices";
+import { SearchableMenuDropdown } from "./SearchableMenuDropdown";
 
-export function DynamicFields({ fields, values, onChange, loading }) {
+export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false }) {
   const visible = fields.filter(field => !["image", "image_mask", "file"].includes(field.ui.type));
-  if (!loading && !visible.length) return null;
+  if (!loading && !discoveryLoading && !visible.length) return null;
+
   return (
     <section className="tool-section configure-section" aria-labelledby="configure-title">
       <h2 id="configure-title">Thiết lập</h2>
-      {loading && <div className="inline-status">Đang tải trường dữ liệu từ RunningHub…</div>}
+      {(loading || discoveryLoading) && (
+        <div className="inline-status">
+          {loading ? "Đang tải trường dữ liệu từ RunningHub…" : "Đang quét checkpoint/LoRA từ ComfyUI…"}
+        </div>
+      )}
       <div className="field-stack">
         {visible.map(field => {
           const type = field.ui.type;
           const choices = field.ui.choices || field.choices || [];
-          if (["menu", "menu-sub", "dropdown", "checkpoints", "loras"].includes(type) && choices.length) {
+          const modelChoice = isModelChoiceField(field);
+          const choiceField = modelChoice || (
+            ["menu", "menu-sub", "dropdown", "checkpoints", "loras", ...DYNAMIC_FIELD_TYPES].includes(type)
+            && choices.length
+          );
+
+          if (choiceField) {
+            const options = choiceOptionsFromField(field, choices);
             return (
               <label className="field" key={field.key}>
                 <span>{field.ui.label || field.key}</span>
-                <select value={values[field.key] ?? ""} onChange={event => onChange(field.key, event.target.value)}>
-                  {choices.map(choice => {
-                    const value = typeof choice === "object" ? choice.value ?? choice.label ?? choice.name : choice;
-                    return <option key={String(value)} value={String(value)}>{displayChoice(choice, field)}</option>;
-                  })}
-                </select>
+                <SearchableMenuDropdown
+                  value={values[field.key] ?? ""}
+                  options={options}
+                  onChange={nextValue => onChange(field.key, nextValue)}
+                  placeholder={`Chọn ${field.ui.label || field.key}…`}
+                  searchPlaceholder={`Tìm ${field.ui.label || field.key}…`}
+                  loading={discoveryLoading && (field.ui.dynamic || isDynamicFieldType(type) || Boolean(resolveDynamicFieldType(field)))}
+                  disabled={discoveryLoading && options.length === 0}
+                  emptyMessage={discoveryLoading ? "Đang tải…" : "Không có model trên server"}
+                />
               </label>
             );
           }
+
           if (["int", "float", "slider"].includes(type) && field.ui.display === "slider") {
             return (
               <label className="field range-field" key={field.key}>

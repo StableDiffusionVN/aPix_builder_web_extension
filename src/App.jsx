@@ -1,18 +1,22 @@
-import { LoaderCircle, Play, Settings, Square } from "lucide-react";
+import { LoaderCircle, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrandMark } from "./components/BrandMark";
 import { DynamicFields } from "./components/DynamicFields";
+import { ImageLightbox } from "./components/ImageLightbox";
 import { ImportPanel } from "./components/ImportPanel";
 import { ModeTabs } from "./components/ModeTabs";
 import { OutputLibrary } from "./components/OutputLibrary";
+import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, fetchImageAsBlob, onImageImport, readSettings, writeSettings } from "./lib/chromeBridge";
 import { defaultValues, flattenConfigInputs, loadCatalog, loadTemplateConfig } from "./lib/catalog";
 import { normalizeImageRecord } from "./lib/images";
+import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, clearOutputs, deleteCustomCatalogItem, deleteOutput, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
-import { runComfyWorkflow, testComfyConnection } from "./services/comfy";
+import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
+import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
 
 function nodeToField(node) {
@@ -52,12 +56,20 @@ export default function App() {
   const [settingsDraft, setSettingsDraft] = useState(settings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadingFields, setLoadingFields] = useState(false);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [importingFolder, setImportingFolder] = useState(false);
   const [scanningApp, setScanningApp] = useState(false);
   const [running, setRunning] = useState(false);
+  const [runQueue, setRunQueue] = useState([]);
+  const [autoRunImports, setAutoRunImports] = useState([]);
+  const [previewOutput, setPreviewOutput] = useState(null);
   const [status, setStatus] = useState("Sẵn sàng");
   const [error, setError] = useState("");
   const abortRef = useRef(null);
+  const runQueueRef = useRef([]);
+  const activeJobRef = useRef(null);
+  const handledImportIdsRef = useRef(new Set());
+  const previewUrlRef = useRef("");
 
   const importFromFile = useCallback(async file => {
     setError("");
@@ -82,11 +94,34 @@ export default function App() {
       await saveInput(record);
       setImage(record);
       setStatus("Đã import ảnh từ trang web");
+      return record;
     } catch (nextError) {
       setError(nextError.message);
       setStatus("Import thất bại");
+      return null;
     }
   }, []);
+
+  const handleExternalImport = useCallback(async payload => {
+    if (!payload?.url) return;
+    const requestId = payload.requestId || `${payload.url}:${payload.createdAt || "legacy"}`;
+    if (handledImportIdsRef.current.has(requestId)) return;
+    handledImportIdsRef.current.add(requestId);
+    if (handledImportIdsRef.current.size > 100) {
+      const oldestRequestId = handledImportIdsRef.current.values().next().value;
+      handledImportIdsRef.current.delete(oldestRequestId);
+    }
+
+    const importedImage = await importFromUrl(payload.url);
+    if (importedImage && payload.autoRun) {
+      setAutoRunImports(current => [...current, {
+        requestId,
+        createdAt: Number(payload.createdAt) || Date.now(),
+        image: importedImage
+      }].sort((left, right) => left.createdAt - right.createdAt));
+      setStatus("Đã nhận ảnh, đang chuẩn bị chạy…");
+    }
+  }, [importFromUrl]);
 
   useEffect(() => {
     Promise.all([loadCatalog(), listCustomCatalogItems(), loadInput(), listOutputs(), readSettings()]).then(([items, customItems, savedImage, savedOutputs, savedSettings]) => {
@@ -98,9 +133,9 @@ export default function App() {
       setSettings(savedSettings);
       setSettingsDraft(savedSettings);
     }).catch(nextError => setError(nextError.message));
-    consumePendingImport().then(pending => pending?.url && importFromUrl(pending.url));
-    return onImageImport(payload => importFromUrl(payload.url));
-  }, [importFromUrl]);
+    consumePendingImport().then(handleExternalImport);
+    return onImageImport(handleExternalImport);
+  }, [handleExternalImport]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.theme || "system";
@@ -148,7 +183,26 @@ export default function App() {
           }
         } else {
           const nextConfig = await loadTemplateConfig(selected);
-          const nextFields = flattenConfigInputs(nextConfig);
+          let nextFields = flattenConfigInputs(nextConfig);
+          if (selected.kind === "comfy") {
+            if (!settings.comfyUrl) {
+              if (!cancelled) {
+                setConfig(nextConfig);
+                setFields(nextFields);
+                setValues(defaultValues(nextFields));
+              }
+              return;
+            }
+            if (!cancelled) setDiscoveryLoading(true);
+            try {
+              const discovery = await getComfyDiscovery(settings.comfyUrl);
+              nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
+            } catch (discoveryError) {
+              if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
+            } finally {
+              if (!cancelled) setDiscoveryLoading(false);
+            }
+          }
           if (!cancelled) {
             setConfig(nextConfig);
             setFields(nextFields);
@@ -163,9 +217,233 @@ export default function App() {
     }
     loadFields();
     return () => { cancelled = true; };
-  }, [selected, settings.runningHubApiKey]);
+  }, [selected, settings.runningHubApiKey, settings.comfyUrl]);
 
-  const canRun = useMemo(() => Boolean(image && selected && !running && !loadingFields), [image, selected, running, loadingFields]);
+  const canSubmit = useMemo(
+    () => Boolean(image && selected && !loadingFields && !discoveryLoading),
+    [image, selected, loadingFields, discoveryLoading]
+  );
+  const queueCount = runQueue.length + autoRunImports.length;
+
+  function setQueue(nextQueue) {
+    runQueueRef.current = nextQueue;
+    setRunQueue(nextQueue);
+  }
+
+  function createJobSnapshot(imageOverride = null) {
+    return {
+      id: crypto.randomUUID(),
+      queuedAt: Date.now(),
+      selected,
+      config,
+      fields,
+      values: { ...values },
+      image: imageOverride || image,
+      settings: {
+        comfyUrl: settings.comfyUrl,
+        runningHubApiKey: settings.runningHubApiKey
+      }
+    };
+  }
+
+  async function persistResults(results, job, startedAt) {
+    const saved = [];
+    for (let index = 0; index < results.length; index += 1) {
+      const result = results[index];
+      const dimensions = await new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(result.blob);
+        const img = new Image();
+        img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url); };
+        img.onerror = reject;
+        img.src = url;
+      });
+      const record = {
+        id: crypto.randomUUID(),
+        blob: result.blob,
+        name: result.name || `${job.selected.slug}-${Date.now()}-${index}.png`,
+        mimeType: result.blob.type,
+        size: result.blob.size,
+        ...dimensions,
+        workflowName: job.selected.name,
+        durationMs: Date.now() - startedAt,
+        createdAt: Date.now()
+      };
+      await saveOutput(record);
+      saved.push(record);
+    }
+    setOutputs(current => [...saved, ...current]);
+    setChecked(new Set(saved.map(item => item.id)));
+    setStatus(`Hoàn tất ${saved.length} output`);
+  }
+
+  async function executeJob(job) {
+    if (job.selected.kind.startsWith("runninghub") && !job.settings.runningHubApiKey) {
+      setSettingsOpen(true);
+      throw new Error("Cần RunningHub API Key để chạy lựa chọn này");
+    }
+
+    setError("");
+    setRunning(true);
+    activeJobRef.current = job;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const startedAt = Date.now();
+    const queueAhead = runQueueRef.current.length;
+
+    try {
+      if (queueAhead) setStatus(`Đang chạy (${queueAhead} trong hàng chờ)…`);
+
+      let results;
+      if (job.selected.kind === "comfy") {
+        results = await runComfyWorkflow({
+          url: job.settings.comfyUrl,
+          workflowUrl: job.selected.workflowUrl,
+          workflow: job.selected.workflow,
+          config: job.config,
+          fields: job.fields,
+          values: job.values,
+          image: job.image,
+          signal: controller.signal,
+          onStatus: setStatus
+        });
+      } else if (job.selected.kind === "runninghub-workflow") {
+        const nodes = configFieldsToNodes(job.fields, job.values, job.image);
+        results = await runRunningHubWorkflow({
+          apiKey: job.settings.runningHubApiKey,
+          workflowId: String(job.config?.runninghub?.workflowId || ""),
+          nodes,
+          image: job.image,
+          signal: controller.signal,
+          onStatus: setStatus
+        });
+      } else {
+        const nodes = job.fields.map(field => ({ ...field.node, fieldValue: job.values[field.key] }));
+        results = await runRunningHubApp({
+          apiKey: job.settings.runningHubApiKey,
+          webappId: job.selected.slug,
+          nodes,
+          image: job.image,
+          signal: controller.signal,
+          onStatus: setStatus
+        });
+      }
+
+      await persistResults(results, job, startedAt);
+    } catch (nextError) {
+      if (nextError.name !== "AbortError") setError(nextError.message);
+      setStatus(nextError.name === "AbortError" ? "Đã hủy" : "Chạy thất bại");
+      throw nextError;
+    } finally {
+      activeJobRef.current = null;
+      abortRef.current = null;
+      const [nextJob, ...remaining] = runQueueRef.current;
+      setQueue(remaining);
+      if (nextJob) {
+        setStatus(remaining.length ? `Chuyển sang job tiếp theo (${remaining.length} còn lại)…` : "Chuyển sang job tiếp theo…");
+        void executeJob(nextJob).catch(() => {});
+      } else {
+        setRunning(false);
+      }
+    }
+  }
+
+  function enqueueRun(imageOverride = null) {
+    const jobImage = imageOverride || image;
+    if (!jobImage) return setError("Hãy import ảnh trước khi chạy");
+    if (!selected) return setError("Hãy chọn template hoặc app");
+    if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
+      setSettingsOpen(true);
+      return setError("Cần RunningHub API Key để chạy lựa chọn này");
+    }
+
+    const job = createJobSnapshot(jobImage);
+    if (running || runQueueRef.current.length > 0) {
+      const nextQueue = [...runQueueRef.current, job];
+      setQueue(nextQueue);
+      setStatus(`Đã thêm vào hàng chờ (${nextQueue.length})`);
+      setError("");
+      return;
+    }
+
+    void executeJob(job).catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!autoRunImports.length || !selected) return;
+    if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
+      setSettingsDraft(settings);
+      setSettingsOpen(true);
+      setError("Nhập RunningHub API Key để chạy ảnh từ menu chuột phải");
+      return;
+    }
+    if (!config || loadingFields || discoveryLoading) return;
+
+    const [nextImport] = autoRunImports;
+    setAutoRunImports(current => current.slice(1));
+    enqueueRun(nextImport.image);
+  }, [autoRunImports, config, discoveryLoading, fields, loadingFields, selected, settings, values]);
+
+  function clearQueue() {
+    if (!runQueueRef.current.length && !autoRunImports.length) return;
+    setQueue([]);
+    setAutoRunImports([]);
+    setStatus("Đã xóa hàng chờ");
+    setError("");
+  }
+
+  async function stopCurrent() {
+    if (!running && !activeJobRef.current) return;
+    setStatus("Đang dừng…");
+    abortRef.current?.abort();
+    const job = activeJobRef.current;
+    if (job?.selected?.kind === "comfy" && job.settings?.comfyUrl) {
+      try {
+        await interruptComfyWorkflow(job.settings.comfyUrl);
+      } catch {
+        /* Comfy có thể đã dừng hoặc không phản hồi interrupt */
+      }
+    }
+  }
+
+  async function stopAll() {
+    clearQueue();
+    await stopCurrent();
+  }
+
+  const openPreview = useCallback(output => {
+    if (!output?.blob) return;
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const url = URL.createObjectURL(output.blob);
+    previewUrlRef.current = url;
+    setPreviewOutput({ url, name: output.name, output });
+  }, []);
+
+  const closePreview = useCallback(() => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = "";
+    }
+    setPreviewOutput(null);
+  }, []);
+
+  const previewIndex = useMemo(
+    () => previewOutput ? outputs.findIndex(output => output.id === previewOutput.output.id) : -1,
+    [outputs, previewOutput]
+  );
+  const previousPreviewIndex = adjacentPreviewIndex(previewIndex, -1, outputs.length);
+  const nextPreviewIndex = adjacentPreviewIndex(previewIndex, 1, outputs.length);
+
+  const showPreviousPreview = useCallback(() => {
+    if (previousPreviewIndex >= 0) openPreview(outputs[previousPreviewIndex]);
+  }, [openPreview, outputs, previousPreviewIndex]);
+
+  const showNextPreview = useCallback(() => {
+    if (nextPreviewIndex >= 0) openPreview(outputs[nextPreviewIndex]);
+  }, [nextPreviewIndex, openPreview, outputs]);
+
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   async function selectWorkflow(item) {
     if (!item) return;
@@ -251,62 +529,7 @@ export default function App() {
   }
 
   async function run() {
-    if (!image) return setError("Hãy import ảnh trước khi chạy");
-    if (!selected) return setError("Hãy chọn template hoặc app");
-    if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
-      setSettingsOpen(true);
-      return setError("Cần RunningHub API Key để chạy lựa chọn này");
-    }
-    setError("");
-    setRunning(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
-    const startedAt = Date.now();
-    try {
-      let results;
-      if (selected.kind === "comfy") {
-        results = await runComfyWorkflow({ url: settings.comfyUrl, workflowUrl: selected.workflowUrl, workflow: selected.workflow, fields, values, image, signal: controller.signal, onStatus: setStatus });
-      } else if (selected.kind === "runninghub-workflow") {
-        const nodes = configFieldsToNodes(fields, values, image);
-        results = await runRunningHubWorkflow({ apiKey: settings.runningHubApiKey, workflowId: String(config?.runninghub?.workflowId || ""), nodes, image, signal: controller.signal, onStatus: setStatus });
-      } else {
-        const nodes = fields.map(field => ({ ...field.node, fieldValue: values[field.key] }));
-        results = await runRunningHubApp({ apiKey: settings.runningHubApiKey, webappId: selected.slug, nodes, image, signal: controller.signal, onStatus: setStatus });
-      }
-      const saved = [];
-      for (let index = 0; index < results.length; index += 1) {
-        const result = results[index];
-        const dimensions = await new Promise((resolve, reject) => {
-          const url = URL.createObjectURL(result.blob);
-          const img = new Image();
-          img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url); };
-          img.onerror = reject;
-          img.src = url;
-        });
-        const record = {
-          id: crypto.randomUUID(),
-          blob: result.blob,
-          name: result.name || `${selected.slug}-${Date.now()}-${index}.png`,
-          mimeType: result.blob.type,
-          size: result.blob.size,
-          ...dimensions,
-          workflowName: selected.name,
-          durationMs: Date.now() - startedAt,
-          createdAt: Date.now()
-        };
-        await saveOutput(record);
-        saved.push(record);
-      }
-      setOutputs(current => [...saved, ...current]);
-      setChecked(new Set(saved.map(item => item.id)));
-      setStatus(`Hoàn tất ${saved.length} output`);
-    } catch (nextError) {
-      if (nextError.name !== "AbortError") setError(nextError.message);
-      setStatus(nextError.name === "AbortError" ? "Đã hủy" : "Chạy thất bại");
-    } finally {
-      setRunning(false);
-      abortRef.current = null;
-    }
+    enqueueRun();
   }
 
   async function removeOutput(id) {
@@ -328,6 +551,8 @@ export default function App() {
   async function saveSettings() {
     await writeSettings(settingsDraft);
     setSettings(settingsDraft);
+    resetComfySession();
+    resetComfyDiscoveryCache();
     setSettingsOpen(false);
     setStatus("Đã lưu Settings");
   }
@@ -356,14 +581,22 @@ export default function App() {
           scanningApp={scanningApp}
         />
         <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={running} />
-        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} />
+        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} />
 
         <section className="run-section">
-          <button className="run-button" onClick={running ? () => abortRef.current?.abort() : run} disabled={!running && !canRun}>
-            {running ? <Square size={17} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-            {running ? "Hủy tiến trình" : `Chạy ${selected?.name || "workflow"}`}
-          </button>
+          <RunControls
+            running={running}
+            canRun={canSubmit}
+            canCancel={running}
+            queueCount={queueCount}
+            onRun={run}
+            onCancel={stopCurrent}
+            onClearQueue={clearQueue}
+            onStopAll={stopAll}
+            runLabel={`Chạy ${selected?.name || "workflow"}`}
+          />
           {running && <div className="processing-status"><LoaderCircle className="spin" size={14} /><span>{status}</span></div>}
+          {!running && queueCount > 0 && <div className="queue-status">{queueCount} job trong hàng chờ</div>}
           {error && <div className="error-message" role="alert">{error}</div>}
         </section>
 
@@ -376,6 +609,7 @@ export default function App() {
           onDownloadSelected={async () => { for (const output of outputs.filter(item => checked.has(item.id))) await downloadBlob(output.blob, output.name); }}
           onDelete={removeOutput}
           onClear={removeAllOutputs}
+          onView={openPreview}
         />
       </main>
 
@@ -384,8 +618,22 @@ export default function App() {
         settings={settingsDraft}
         onChange={setSettingsDraft}
         onSave={saveSettings}
-        onTestComfy={async () => { await testComfyConnection(settingsDraft.comfyUrl); setStatus("ComfyUI đã kết nối"); }}
+        onTestComfy={async () => { resetComfySession(); resetComfyDiscoveryCache(); await testComfyConnection(settingsDraft.comfyUrl); setStatus("ComfyUI đã kết nối"); }}
         onClose={() => setSettingsOpen(false)}
+      />
+
+      <ImageLightbox
+        open={Boolean(previewOutput)}
+        imageUrl={previewOutput?.url || ""}
+        title={previewOutput?.name || ""}
+        currentPosition={previewIndex + 1}
+        total={outputs.length}
+        canPrevious={previousPreviewIndex >= 0}
+        canNext={nextPreviewIndex >= 0}
+        onPrevious={showPreviousPreview}
+        onNext={showNextPreview}
+        onClose={closePreview}
+        onDownload={previewOutput?.output ? () => downloadBlob(previewOutput.output.blob, previewOutput.output.name) : undefined}
       />
     </div>
   );

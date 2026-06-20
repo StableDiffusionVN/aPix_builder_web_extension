@@ -40,7 +40,7 @@ export function SettingsPanel({ open, settings, onChange, onSave, onTestComfy, o
           <span>ComfyUI URL</span>
           <div className="input-action-row">
             <Server size={16} />
-            <input value={settings.comfyUrl} onChange={event => onChange({ ...settings, comfyUrl: event.target.value })} placeholder="http://127.0.0.1:8188" />
+            <input value={settings.comfyUrl} onChange={event => onChange({ ...settings, comfyUrl: event.target.value })} placeholder="http://127.0.0.1:8188 hoặc https://user:pass@host" />
             <button onClick={test} disabled={testing}>{testing ? "Đang kiểm tra" : "Kiểm tra"}</button>
           </div>
         </label>

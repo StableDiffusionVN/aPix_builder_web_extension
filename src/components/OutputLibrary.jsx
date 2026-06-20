@@ -2,14 +2,22 @@ import { Check, Download, Trash2 } from "lucide-react";
 import { useObjectUrl } from "../hooks/useObjectUrl";
 import { formatBytes } from "../lib/images";
 
-function OutputRow({ output, selected, onToggle, onDownload, onDelete }) {
+function OutputRow({ output, selected, onToggle, onDownload, onDelete, onView }) {
   const url = useObjectUrl(output.blob);
   return (
     <article className="output-row">
       <button className={`check-button ${selected ? "checked" : ""}`} onClick={() => onToggle(output.id)} aria-label={`Chọn ${output.name}`}>
         {selected && <Check size={13} />}
       </button>
-      <img src={url} alt={output.name} />
+      <button
+        type="button"
+        className="output-thumb-button"
+        onClick={() => onView?.(output)}
+        aria-label={`Xem ${output.name}`}
+        disabled={!url}
+      >
+        <img src={url} alt={output.name} />
+      </button>
       <div className="output-meta">
         <strong>{output.name}</strong>
         <span>{output.width} × {output.height} · {formatBytes(output.size)}</span>
@@ -23,7 +31,7 @@ function OutputRow({ output, selected, onToggle, onDownload, onDelete }) {
   );
 }
 
-export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDownload, onDownloadSelected, onDelete, onClear }) {
+export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDownload, onDownloadSelected, onDelete, onClear, onView }) {
   return (
     <section className="tool-section output-section" aria-labelledby="outputs-title">
       <div className="section-heading-row">
@@ -39,7 +47,17 @@ export function OutputLibrary({ outputs, selected, onToggle, onToggleAll, onDown
       {!!outputs.length && (
         <>
           <div className="output-list">
-            {outputs.map(output => <OutputRow key={output.id} output={output} selected={selected.has(output.id)} onToggle={onToggle} onDownload={onDownload} onDelete={onDelete} />)}
+            {outputs.map(output => (
+              <OutputRow
+                key={output.id}
+                output={output}
+                selected={selected.has(output.id)}
+                onToggle={onToggle}
+                onDownload={onDownload}
+                onDelete={onDelete}
+                onView={onView}
+              />
+            ))}
           </div>
           {outputs.length > 1 && <button className="download-selected" onClick={onDownloadSelected} disabled={!selected.size}>
             <Download size={18} /> Tải các ảnh đã chọn ({selected.size})

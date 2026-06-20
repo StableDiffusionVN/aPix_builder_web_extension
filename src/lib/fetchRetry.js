@@ -35,6 +35,7 @@ export async function fetchWithRetry(url, options = {}) {
   const {
     signal,
     headers,
+    fetchFn = fetch,
     maxAttempts = DEFAULT_MAX_ATTEMPTS,
     maxDurationMs = DEFAULT_MAX_DURATION_MS,
     initialDelayMs = DEFAULT_INITIAL_DELAY_MS,
@@ -50,7 +51,7 @@ export async function fetchWithRetry(url, options = {}) {
     if (signal?.aborted) throw signal.reason || new DOMException("Đã hủy", "AbortError");
     attempt += 1;
     try {
-      const response = await fetch(url, { headers, signal });
+      const response = await fetchFn(url, { headers, signal });
       if (response.ok) return response;
       lastError = new Error(`HTTP ${response.status}`);
       if (!shouldRetryResponse(response) || attempt >= maxAttempts) throw lastError;

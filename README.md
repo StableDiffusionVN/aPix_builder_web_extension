@@ -5,7 +5,7 @@ Chrome Manifest V3 extension that brings the aPix Builder workflow into a browse
 ## Features
 
 - Drag images from a webpage or desktop into the side panel.
-- Right-click any webpage image and choose **Mở trong aPix Builder**.
+- Right-click any webpage image and choose **Mở + Run aPix Builder** to import it and run the currently open app/template immediately, or append it to the active queue.
 - Run bundled ComfyUI templates, RunningHub workflows, or RunningHub AI Apps.
 - Switch providers from the persistent top mode bar.
 - Import custom ComfyUI/RH Workflow folders (`app_build` plus `api.json` where required).
