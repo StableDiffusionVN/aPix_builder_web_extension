@@ -97,9 +97,14 @@ async function uploadImage(session, image, signal) {
 function resolveWorkflowPath(workflow, id) {
   const [nodeId, ...rest] = String(id).split("-");
   const rawPath = rest[0] === "inputs" ? rest.slice(1).join("-") : rest.join("-");
+  const inputs = workflow[nodeId]?.inputs;
+  if (!inputs) throw new Error(`Không tìm thấy node ${nodeId}`);
+  // Ưu tiên key phẳng: một số node ComfyUI dùng tên input có dấu chấm (vd "resize_type.longer_size").
+  if (Object.prototype.hasOwnProperty.call(inputs, rawPath)) {
+    return { target: inputs, key: rawPath };
+  }
   const path = rawPath.split(".").filter(Boolean);
-  let cursor = workflow[nodeId]?.inputs;
-  if (!cursor) throw new Error(`Không tìm thấy node ${nodeId}`);
+  let cursor = inputs;
   for (let index = 0; index < path.length - 1; index += 1) {
     cursor = cursor[path[index]];
     if (!cursor || typeof cursor !== "object") throw new Error(`Không tìm thấy trường ${rawPath}`);
