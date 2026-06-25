@@ -6,6 +6,14 @@ function headers(apiKey, extra = {}) {
   return { ...extra, Authorization: `Bearer ${apiKey}` };
 }
 
+class RhError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = "RhError";
+    this.code = code;
+  }
+}
+
 async function readEnvelope(response) {
   const text = await response.text();
   let payload;
@@ -15,9 +23,52 @@ async function readEnvelope(response) {
     throw new Error(text || `RunningHub HTTP ${response.status}`);
   }
   if (!response.ok || (payload.code != null && payload.code !== 0)) {
-    throw new Error(payload.msg || payload.message || `RunningHub HTTP ${response.status}`);
+    const message = payload.msg || payload.message || `RunningHub HTTP ${response.status}`;
+    throw new RhError(message, payload.code);
   }
   return payload;
+}
+
+// Lỗi hết điểm (insufficient coins) → thử key khác.
+function isRhInsufficientCoins(error) {
+  const code = Number(error?.code);
+  if ([1001, 1002, 1004, 1006, 1007].includes(code)) return true;
+  return /coin|balance|insufficient|credit|hết|không đủ|不足|余额|积分/i.test(String(error?.message || ""));
+}
+
+// Lỗi hàng đợi đầy / key bận (TASK_QUEUE_MAXED) → thử key khác.
+function isRhQueueMaxed(error) {
+  const code = Number(error?.code);
+  if (code === 421 || code === 415) return true;
+  return /TASK_QUEUE_MAXED/i.test(String(error?.message || "")) || /queue.*max/i.test(String(error?.message || ""));
+}
+
+// Tách chuỗi key thành danh sách (mỗi dòng hoặc dấu phẩy một key) → pool failover.
+function parseRhApiKeys(apiKey) {
+  return String(apiKey || "").split(/[\n,]+/).map(key => key.trim()).filter(Boolean);
+}
+
+// Chạy qua pool key: hết điểm/bận → tự chuyển key kế.
+async function runWithRhFailover(apiKey, onStatus, runOnce) {
+  const keys = parseRhApiKeys(apiKey);
+  if (!keys.length) throw new Error("Chưa có RunningHub API key");
+  let lastError;
+  for (let index = 0; index < keys.length; index += 1) {
+    try {
+      return await runOnce(keys[index]);
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      lastError = error;
+      const retryable = isRhInsufficientCoins(error) || isRhQueueMaxed(error);
+      if (retryable && index < keys.length - 1) {
+        const reason = isRhQueueMaxed(error) ? "đang bận" : "hết điểm";
+        onStatus?.(`Key #${index + 1} ${reason} — chuyển key #${index + 2}…`);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 function delay(ms, signal) {
@@ -221,29 +272,33 @@ export function configFieldsToNodes(fields, values, image) {
 }
 
 export async function runRunningHubApp({ apiKey, webappId, nodes, image, signal, onStatus }) {
-  const nodeInfoList = await prepareNodes(apiKey, nodes, image, signal, onStatus);
-  onStatus?.("Đang gửi AI App…");
-  const response = await fetch(`${BASE_URL}/task/openapi/ai-app/run`, {
-    method: "POST",
-    headers: headers(apiKey, { "content-type": "application/json" }),
-    body: JSON.stringify({ apiKey, webappId, nodeInfoList }),
-    signal
+  return runWithRhFailover(apiKey, onStatus, async key => {
+    const nodeInfoList = await prepareNodes(key, nodes, image, signal, onStatus);
+    onStatus?.("Đang gửi AI App…");
+    const response = await fetch(`${BASE_URL}/task/openapi/ai-app/run`, {
+      method: "POST",
+      headers: headers(key, { "content-type": "application/json" }),
+      body: JSON.stringify({ apiKey: key, webappId, nodeInfoList }),
+      signal
+    });
+    const payload = await readEnvelope(response);
+    return waitForOutputs(key, payload.data?.taskId, signal, onStatus);
   });
-  const payload = await readEnvelope(response);
-  return waitForOutputs(apiKey, payload.data?.taskId, signal, onStatus);
 }
 
 export async function runRunningHubWorkflow({ apiKey, workflowId, nodes, image, signal, onStatus }) {
-  const nodeInfoList = await prepareNodes(apiKey, nodes, image, signal, onStatus);
-  onStatus?.("Đang gửi workflow…");
-  const response = await fetch(`${BASE_URL}/task/openapi/create`, {
-    method: "POST",
-    headers: headers(apiKey, { "content-type": "application/json" }),
-    body: JSON.stringify({ apiKey, workflowId, nodeInfoList }),
-    signal
+  return runWithRhFailover(apiKey, onStatus, async key => {
+    const nodeInfoList = await prepareNodes(key, nodes, image, signal, onStatus);
+    onStatus?.("Đang gửi workflow…");
+    const response = await fetch(`${BASE_URL}/task/openapi/create`, {
+      method: "POST",
+      headers: headers(key, { "content-type": "application/json" }),
+      body: JSON.stringify({ apiKey: key, workflowId, nodeInfoList }),
+      signal
+    });
+    const payload = await readEnvelope(response);
+    return waitForOutputs(key, payload.data?.taskId, signal, onStatus);
   });
-  const payload = await readEnvelope(response);
-  return waitForOutputs(apiKey, payload.data?.taskId, signal, onStatus);
 }
 
 // Huỷ task trên server RunningHub (best-effort) — cần taskId; tránh để task chạy tiếp khi user dừng.
