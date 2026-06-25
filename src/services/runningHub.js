@@ -246,8 +246,35 @@ export async function runRunningHubWorkflow({ apiKey, workflowId, nodes, image, 
   return waitForOutputs(apiKey, payload.data?.taskId, signal, onStatus);
 }
 
+// Huỷ task trên server RunningHub (best-effort) — cần taskId; tránh để task chạy tiếp khi user dừng.
+export async function cancelRunningHubTask(apiKey, taskId) {
+  const id = String(taskId || "").trim();
+  if (!apiKey || !id) return;
+  try {
+    await fetch(`${BASE_URL}/task/openapi/cancel`, {
+      method: "POST",
+      headers: headers(apiKey, { "content-type": "application/json" }),
+      body: JSON.stringify({ apiKey, taskId: id })
+    });
+  } catch {
+    // best-effort, bỏ qua lỗi
+  }
+}
+
 async function waitForOutputs(apiKey, taskId, signal, onStatus) {
   if (!taskId) throw new Error("RunningHub không trả về taskId");
+  try {
+    return await pollOutputs(apiKey, taskId, signal, onStatus);
+  } catch (error) {
+    // User dừng → huỷ task trên server (không truyền signal đã abort để cancel vẫn gửi được).
+    if (signal?.aborted || error?.name === "AbortError") {
+      void cancelRunningHubTask(apiKey, taskId);
+    }
+    throw error;
+  }
+}
+
+async function pollOutputs(apiKey, taskId, signal, onStatus) {
   const startedAt = Date.now();
   let pollErrors = 0;
 
