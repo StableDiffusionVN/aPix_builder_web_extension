@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { formatBytes, getDroppedImageUrl } from "../lib/images";
 import { useObjectUrl } from "../hooks/useObjectUrl";
 
-export function ImportPanel({ image, onFile, onUrl, onClear, busy }) {
+export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = false, label = "Import ảnh" }) {
   const inputRef = useRef(null);
   const previewUrl = useObjectUrl(image?.blob);
 
@@ -15,9 +15,8 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy }) {
     if (url) return onUrl(url);
   }
 
-  return (
-    <section className="tool-section import-section" aria-labelledby="import-title">
-      <h2 id="import-title">Import ảnh</h2>
+  const body = (
+    <>
       <div
         className={`drop-zone ${image ? "is-compact" : ""}`}
         onDragOver={event => event.preventDefault()}
@@ -51,6 +50,23 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy }) {
           </div>
         </div>
       )}
+    </>
+  );
+
+  // embedded: nhúng trong khung field/sub-menu (không bọc section + tiêu đề riêng).
+  if (embedded) {
+    return (
+      <div className="field import-field">
+        <span>{label}</span>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <section className="tool-section import-section" aria-labelledby="import-title">
+      <h2 id="import-title">Import ảnh</h2>
+      {body}
     </section>
   );
 }

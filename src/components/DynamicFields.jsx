@@ -2,10 +2,11 @@ import { DYNAMIC_FIELD_TYPES, isDynamicFieldType, resolveDynamicFieldType } from
 import { activeSubFields, isMenuSub, isModelChoiceField, usesRemoteModelDiscovery } from "../lib/catalog";
 import { choiceOptionsFromField } from "../lib/menuChoices";
 import { SearchableMenuDropdown } from "./SearchableMenuDropdown";
+import { ImportPanel } from "./ImportPanel";
 
 const IMAGE_TYPES = ["image", "image_mask", "file"];
 
-export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "" }) {
+export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", imageInput = null }) {
   const remoteModelDiscovery = usesRemoteModelDiscovery(workflowKind);
   const visible = fields.filter(field => !IMAGE_TYPES.includes(field.ui.type));
   if (!loading && !discoveryLoading && !visible.length) return null;
@@ -75,14 +76,28 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
 
   function renderRow(field) {
     if (!isMenuSub(field)) return renderField(field);
-    // menu-sub: dropdown chọn nhánh + field con đang chọn, bọc trong một khung (ảnh lấy từ ImportPanel).
-    const subs = activeSubFields(field, values).filter(sub => !IMAGE_TYPES.includes(sub.ui.type));
+    // menu-sub: dropdown chọn nhánh + field con đang chọn, bọc trong một khung.
+    const subs = activeSubFields(field, values);
+    const imageSubs = imageInput ? subs.filter(sub => IMAGE_TYPES.includes(sub.ui.type)) : [];
+    const otherSubs = subs.filter(sub => !IMAGE_TYPES.includes(sub.ui.type));
     return (
       <div className="menu-sub-group" key={field.key}>
         {renderField(field)}
-        {subs.length > 0 && (
+        {(imageSubs.length > 0 || otherSubs.length > 0) && (
           <div className="menu-sub-children">
-            {subs.map(renderField)}
+            {imageSubs.map(sub => (
+              <ImportPanel
+                key={sub.key}
+                embedded
+                label={sub.ui.label || sub.key}
+                image={imageInput.image}
+                onFile={imageInput.onFile}
+                onUrl={imageInput.onUrl}
+                onClear={imageInput.onClear}
+                busy={imageInput.busy}
+              />
+            ))}
+            {otherSubs.map(renderField)}
           </div>
         )}
       </div>

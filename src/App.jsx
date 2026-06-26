@@ -11,7 +11,9 @@ import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
-import { defaultValues, flattenConfigInputs, loadCatalog, loadTemplateConfig } from "./lib/catalog";
+import { allSubFields, defaultValues, flattenConfigInputs, isMenuSub, loadCatalog, loadTemplateConfig } from "./lib/catalog";
+
+const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
@@ -314,6 +316,14 @@ export default function App() {
     () => Boolean(image && selected && !loadingFields && !awaitingModelDiscovery),
     [image, selected, loadingFields, awaitingModelDiscovery]
   );
+  // Ảnh do menu-sub quản (nhánh nào đó có field ảnh) và không có field ảnh top-level
+  // → ô ảnh hiển thị trong khung sub-menu, ẩn panel "Import ảnh" trên cùng.
+  const imageInMenuSub = useMemo(() => {
+    const hasTopLevelImage = fields.some(field => IMAGE_FIELD_TYPES.includes(field.ui?.type));
+    const hasMenuSubImage = fields.some(field => isMenuSub(field)
+      && allSubFields(field).some(sub => IMAGE_FIELD_TYPES.includes(sub.ui?.type)));
+    return hasMenuSubImage && !hasTopLevelImage;
+  }, [fields]);
   const currentLaneKey = laneKeyForMode(mode);
   const currentLane = lanes[currentLaneKey];
   const otherLaneKey = currentLaneKey === "comfy" ? "rh" : "comfy";
@@ -697,8 +707,18 @@ export default function App() {
             storageWarning={presetsStorageWarning}
           />
         ) : null}
-        <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
-        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} workflowKind={mode} />
+        {!imageInMenuSub && (
+          <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
+        )}
+        <DynamicFields
+          fields={fields}
+          values={values}
+          onChange={updateValue}
+          loading={loadingFields}
+          discoveryLoading={discoveryLoading}
+          workflowKind={mode}
+          imageInput={imageInMenuSub ? { image, onFile: importFromFile, onUrl: importFromUrl, onClear: removeInput, busy: currentLane.running } : null}
+        />
 
         <section className="run-section">
           <RunControls
