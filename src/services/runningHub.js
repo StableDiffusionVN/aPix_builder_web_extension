@@ -1,4 +1,5 @@
 import { fetchWithRetry } from "../lib/fetchRetry.js";
+import { expandActiveFields } from "../lib/catalog.js";
 
 const BASE_URL = "https://www.runninghub.ai";
 
@@ -259,16 +260,19 @@ export async function prepareNodes(apiKey, nodes, image, signal, onStatus) {
 }
 
 export function configFieldsToNodes(fields, values, image) {
-  return fields.map(field => {
-    const { nodeId, fieldName } = parseFieldId(field.id);
-    const imageField = ["image", "image_mask", "file"].includes(field.ui.type);
-    return {
-      nodeId,
-      fieldName,
-      fieldType: imageField ? "IMAGE" : String(field.ui.type || "STRING").toUpperCase(),
-      fieldValue: imageField ? image : values[field.key]
-    };
-  });
+  // menu-sub → bung thành field con đang chọn; bỏ field không có id (vd menu-sub chỉ là bộ chọn).
+  return expandActiveFields(fields, values)
+    .filter(field => field.id)
+    .map(field => {
+      const { nodeId, fieldName } = parseFieldId(field.id);
+      const imageField = ["image", "image_mask", "file"].includes(field.ui.type);
+      return {
+        nodeId,
+        fieldName,
+        fieldType: imageField ? "IMAGE" : String(field.ui.type || "STRING").toUpperCase(),
+        fieldValue: imageField ? image : values[field.key]
+      };
+    });
 }
 
 export async function runRunningHubApp({ apiKey, webappId, nodes, image, signal, onStatus }) {

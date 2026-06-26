@@ -158,6 +158,9 @@ main { padding: 0 18px 28px; }
 .danger-text { color: var(--danger) !important; }
 
 .field-stack { display: flex; flex-direction: column; gap: 13px; }
+/* menu-sub: bọc dropdown + field con trong một khung */
+.menu-sub-group { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.menu-sub-children { display: flex; flex-direction: column; gap: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
 .searchable-menu-dropdown { position: relative; }
 .searchable-menu-trigger { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--control); color: var(--text); cursor: pointer; text-align: left; }
 .searchable-menu-trigger:disabled { opacity: .55; cursor: wait; }

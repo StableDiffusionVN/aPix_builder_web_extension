@@ -1,5 +1,6 @@
 import { blobToBase64, comfyFetch } from "../lib/comfyBridge.js";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../lib/comfyTarget.js";
+import { expandActiveFields } from "../lib/catalog.js";
 import { fetchWithRetry } from "../lib/fetchRetry.js";
 
 export { buildComfyUrlCandidates, parseComfyTarget as normalizeTarget } from "../lib/comfyTarget.js";
@@ -163,7 +164,8 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
   }
   let uploaded;
 
-  for (const field of fields) {
+  // menu-sub → bung thành field con đang chọn (chỉ nhánh active được gán).
+  for (const field of expandActiveFields(fields, values)) {
     const type = field.ui.type;
     if (["image", "image_mask", "file"].includes(type)) {
       if (!uploaded) {

@@ -5,7 +5,7 @@ import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
 import { collectComfyOutputImages } from "../src/services/comfy";
 import { enrichFieldsWithDiscovery } from "../src/services/comfyDiscovery";
-import { defaultValues, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
+import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
 import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles } from "../src/lib/templateImport";
@@ -406,6 +406,63 @@ describe("RunningHub workflow mapping", () => {
       { nodeId: "7", fieldName: "image", fieldType: "IMAGE", fieldValue: image },
       { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
     ]);
+  });
+});
+
+describe("menu-sub (conditional)", () => {
+  const config = {
+    input: {
+      tai_anh: {
+        ui: {
+          type: "menu-sub",
+          label: "Tải ảnh",
+          choices: ["Upload", "URL"],
+          value: "Upload",
+          sub: {
+            Upload: { up_img: { id: "7-image", ui: { type: "image", label: "Image" } } },
+            URL: {
+              up_url: { id: "7-url", ui: { type: "string", label: "URL" } },
+              up_steps: { id: "2-steps", ui: { type: "int", label: "Steps", value: 12 } }
+            }
+          }
+        }
+      },
+      strength: { id: "6-strength_model", ui: { type: "float", value: 0.8 } }
+    }
+  };
+
+  it("giữ menu-sub (không id) khi flatten + seed default mọi nhánh", () => {
+    const fields = flattenConfigInputs(config);
+    expect(fields.map(f => f.key)).toEqual(["tai_anh", "strength"]);
+    const values = defaultValues(fields, { kind: "comfy" });
+    expect(values.tai_anh).toBe("Upload");
+    expect(values["tai_anh.URL.up_url"]).toBe("");
+    expect(values["tai_anh.URL.up_steps"]).toBe(12);
+    expect(values.strength).toBe(0.8);
+  });
+
+  it("activeSubFields đổi theo lựa chọn", () => {
+    const fields = flattenConfigInputs(config);
+    const menu = fields[0];
+    expect(activeSubFields(menu, { tai_anh: "Upload" }).map(f => f.id)).toEqual(["7-image"]);
+    expect(activeSubFields(menu, { tai_anh: "URL" }).map(f => f.id)).toEqual(["7-url", "2-steps"]);
+  });
+
+  it("configFieldsToNodes chỉ gửi field con của nhánh đang chọn", () => {
+    const image = { blob: {}, name: "in.png" };
+    const fields = flattenConfigInputs(config);
+    const values = { ...defaultValues(fields, { kind: "comfy" }), tai_anh: "URL", "tai_anh.URL.up_url": "http://x/y.png" };
+    expect(configFieldsToNodes(fields, values, image)).toEqual([
+      { nodeId: "7", fieldName: "url", fieldType: "STRING", fieldValue: "http://x/y.png" },
+      { nodeId: "2", fieldName: "steps", fieldType: "INT", fieldValue: 12 },
+      { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
+    ]);
+  });
+
+  it("expandActiveFields bung nhánh Upload có field ảnh", () => {
+    const fields = flattenConfigInputs(config);
+    const expanded = expandActiveFields(fields, { tai_anh: "Upload" });
+    expect(expanded.map(f => f.id)).toEqual(["7-image", "6-strength_model"]);
   });
 });
 
