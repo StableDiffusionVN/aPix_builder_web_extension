@@ -1,5 +1,5 @@
-import { FolderInput, LoaderCircle, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { FileArchive, FolderInput, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { AppInfoCard } from "./AppInfoCard";
 
 const MODE_TITLES = {
@@ -8,8 +8,9 @@ const MODE_TITLES = {
   "runninghub-app": "RunningHub App"
 };
 
-export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImportDirectory, onAddCustomApp, onDeleteCustom, importingFolder, scanningApp }) {
+export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImportDirectory, onImportZip, onAddCustomApp, onDeleteCustom, importingFolder, scanningApp }) {
   const [customAppId, setCustomAppId] = useState("");
+  const zipInputRef = useRef(null);
   const title = MODE_TITLES[mode];
   const isAppMode = mode === "runninghub-app";
 
@@ -23,9 +24,21 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
       <div className="picker-heading">
         <h2 id="workflow-picker-title">{title}</h2>
         {!isAppMode && (
-          <button className="import-folder-button" onClick={onImportDirectory} disabled={importingFolder}>
-            {importingFolder ? <LoaderCircle className="spin" size={15} /> : <FolderInput size={15} />} {importingFolder ? "Đang quét" : "Import"}
-          </button>
+          <div className="import-buttons">
+            <button className="import-folder-button" onClick={onImportDirectory} disabled={importingFolder}>
+              {importingFolder ? <LoaderCircle className="spin" size={15} /> : <FolderInput size={15} />} {importingFolder ? "Đang quét" : "Thư mục"}
+            </button>
+            <button className="import-folder-button" onClick={() => zipInputRef.current?.click()} disabled={importingFolder}>
+              <FileArchive size={15} /> .zip
+            </button>
+            <input
+              ref={zipInputRef}
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              onChange={event => { const f = event.target.files?.[0]; event.target.value = ""; if (f) onImportZip?.(f); }}
+            />
+          </div>
         )}
       </div>
 

@@ -17,7 +17,7 @@ const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
-import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
+import { createCustomRunningHubApp, importTemplateDirectory, importTemplateZip } from "./lib/templateImport";
 import { usePresets } from "./hooks/usePresets";
 import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
@@ -563,6 +563,16 @@ export default function App() {
     setStatus(`Đã chọn ${item.name}`);
   }
 
+  async function persistImported(imported) {
+    for (const item of imported) await saveCustomCatalogItem(item);
+    setCatalog(current => {
+      const importedIds = new Set(imported.map(item => item.id));
+      return [...current.filter(item => !importedIds.has(item.id)), ...imported];
+    });
+    if (imported[0]) setSelected(imported[0]);
+    setStatus(`Đã import ${imported.length} template`);
+  }
+
   async function chooseTemplateFolder() {
     setError("");
     if (typeof window.showDirectoryPicker !== "function") {
@@ -573,18 +583,26 @@ export default function App() {
     try {
       const directoryHandle = await window.showDirectoryPicker({ mode: "read" });
       setStatus("Đang quét thư mục template…");
-      const imported = await importTemplateDirectory(directoryHandle, mode);
-      for (const item of imported) await saveCustomCatalogItem(item);
-      setCatalog(current => {
-        const importedIds = new Set(imported.map(item => item.id));
-        return [...current.filter(item => !importedIds.has(item.id)), ...imported];
-      });
-      setSelected(imported[0]);
-      setStatus(`Đã import ${imported.length} template`);
+      await persistImported(await importTemplateDirectory(directoryHandle, mode));
     } catch (nextError) {
       if (nextError.name === "AbortError") return;
       setError(nextError.message);
       setStatus("Import template thất bại");
+    } finally {
+      setImportingFolder(false);
+    }
+  }
+
+  async function chooseTemplateZip(file) {
+    if (!file) return;
+    setError("");
+    setImportingFolder(true);
+    try {
+      setStatus("Đang giải nén template…");
+      await persistImported(await importTemplateZip(file, mode));
+    } catch (nextError) {
+      setError(nextError.message);
+      setStatus("Import .zip thất bại");
     } finally {
       setImportingFolder(false);
     }
@@ -689,6 +707,7 @@ export default function App() {
           onSelect={selectWorkflow}
           appInfo={appInfo}
           onImportDirectory={chooseTemplateFolder}
+          onImportZip={chooseTemplateZip}
           onAddCustomApp={addCustomApp}
           onDeleteCustom={removeCustomItem}
           importingFolder={importingFolder}

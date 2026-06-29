@@ -8,7 +8,8 @@ import { enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/com
 import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
-import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles } from "../src/lib/templateImport";
+import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles, importTemplateZip } from "../src/lib/templateImport";
+import { zipSync } from "fflate";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppInfoCard } from "../src/components/AppInfoCard";
 import { OutputLibrary } from "../src/components/OutputLibrary";
@@ -463,6 +464,22 @@ describe("menu-sub (conditional)", () => {
     const fields = flattenConfigInputs(config);
     const expanded = expandActiveFields(fields, { tai_anh: "Upload" });
     expect(expanded.map(f => f.id)).toEqual(["7-image", "6-strength_model"]);
+  });
+});
+
+describe("import template .zip", () => {
+  it("giải nén .zip và import được template comfy", async () => {
+    const enc = new TextEncoder();
+    const cfg = JSON.stringify({ app: { name: "Zip Test" }, input: { x: { id: "1-text", ui: { type: "string" } } }, output: { o: { id: "9", ui: { type: "image" } } } });
+    const api = JSON.stringify({ "1": { class_type: "X", inputs: { text: "" } }, "9": { class_type: "SaveImage", inputs: {} } });
+    const zipped = zipSync({
+      "zip-test/app_build.json": enc.encode(cfg),
+      "zip-test/api.json": enc.encode(api)
+    });
+    const file = new File([zipped], "zip-test.zip");
+    const imported = await importTemplateZip(file, "comfy");
+    expect(imported.length).toBe(1);
+    expect(imported[0].name).toBe("Zip Test");
   });
 });
 
