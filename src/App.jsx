@@ -11,7 +11,7 @@ import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
-import { allSubFields, defaultValues, flattenConfigInputs, isMenuSub, loadCatalog, loadTemplateConfig } from "./lib/catalog";
+import { allSubFields, defaultValues, flattenConfigInputs, isMenuSub, loadCatalog, loadComfyWorkflow, loadTemplateConfig } from "./lib/catalog";
 
 const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
@@ -21,7 +21,7 @@ import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templa
 import { usePresets } from "./hooks/usePresets";
 import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
-import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
+import { augmentDiscoveryWithSdvn, enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
 
 function runnerLabelForKind(kind) {
@@ -277,23 +277,21 @@ export default function App() {
           const nextConfig = await loadTemplateConfig(selected);
           let nextFields = flattenConfigInputs(nextConfig);
           if (selected.kind === "comfy") {
-            if (!settings.comfyUrl) {
-              if (!cancelled) {
-                setConfig(nextConfig);
-                setFields(nextFields);
-                setValues(defaultValues(nextFields, { kind: selected.kind }));
+            // Workflow JSON để dò node loader SDVN (bơm thêm model/lora kể cả khi không có server).
+            const workflowJson = await loadComfyWorkflow(selected);
+            let discovery = { dynamicChoices: {}, modelLists: {} };
+            if (settings.comfyUrl) {
+              if (!cancelled) setDiscoveryLoading(true);
+              try {
+                discovery = await getComfyDiscovery(settings.comfyUrl);
+              } catch (discoveryError) {
+                if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
+              } finally {
+                if (!cancelled) setDiscoveryLoading(false);
               }
-              return;
             }
-            if (!cancelled) setDiscoveryLoading(true);
-            try {
-              const discovery = await getComfyDiscovery(settings.comfyUrl);
-              nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
-            } catch (discoveryError) {
-              if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
-            } finally {
-              if (!cancelled) setDiscoveryLoading(false);
-            }
+            discovery = await augmentDiscoveryWithSdvn(discovery, nextFields, workflowJson);
+            nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
           }
           if (!cancelled) {
             setConfig(nextConfig);

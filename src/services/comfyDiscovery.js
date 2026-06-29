@@ -179,6 +179,57 @@ export async function getComfyDiscovery(comfyUrl, signal, { refresh = false } = 
   return data;
 }
 
+// MARK: - Bổ sung model SDVN (node class_type chứa "SDVN")
+
+const SDVN_LIB_URLS = {
+  checkpoints: "https://raw.githubusercontent.com/StableDiffusionVN/SDVN_Comfy_node/refs/heads/main/model_lib.json",
+  loras: "https://raw.githubusercontent.com/StableDiffusionVN/SDVN_Comfy_node/refs/heads/main/lora_lib.json"
+};
+const sdvnLibCache = {};
+
+/** Tên model/lora trong thư viện SDVN (key của JSON). type: "checkpoints" | "loras". */
+export async function fetchSdvnLibraryNames(type, signal) {
+  if (sdvnLibCache[type]) return sdvnLibCache[type];
+  const url = SDVN_LIB_URLS[type];
+  if (!url) return [];
+  try {
+    const response = await fetch(url, { signal });
+    if (!response.ok) return [];
+    const obj = await response.json();
+    const names = uniqueStrings(Object.keys(obj || {}));
+    sdvnLibCache[type] = names;
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+/** Dynamic type (checkpoints/loras) có node class_type chứa "SDVN" trong workflow JSON. */
+export function sdvnAugmentTypes(fields, workflowJson) {
+  const out = new Set();
+  if (!workflowJson || typeof workflowJson !== "object") return out;
+  for (const field of fields || []) {
+    const kind = resolveDynamicFieldType(field);
+    if (kind !== "checkpoints" && kind !== "loras") continue;
+    const nodeId = String(field?.id ?? "").split("-")[0];
+    const classType = nodeId ? workflowJson?.[nodeId]?.class_type : null;
+    if (nodeId && typeof classType === "string" && /sdvn/i.test(classType)) out.add(kind);
+  }
+  return out;
+}
+
+/** Gộp danh sách model SDVN vào discovery cho các type có node loader SDVN. */
+export async function augmentDiscoveryWithSdvn(discovery, fields, workflowJson, signal) {
+  const types = sdvnAugmentTypes(fields, workflowJson);
+  if (!types.size) return discovery;
+  const dynamicChoices = { ...(discovery?.dynamicChoices || {}) };
+  for (const type of types) {
+    const extra = await fetchSdvnLibraryNames(type, signal);
+    if (extra.length) dynamicChoices[type] = uniqueStrings([...(dynamicChoices[type] || []), ...extra]);
+  }
+  return { ...discovery, dynamicChoices, modelLists: dynamicChoices };
+}
+
 export function enrichFieldsWithDiscovery(fields, discovery) {
   return fields.map(field => {
     const dynamicKind = resolveDynamicFieldType(field);

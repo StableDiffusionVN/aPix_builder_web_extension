@@ -4,7 +4,7 @@ import { extensionForType, fileStem, formatBytes } from "../src/lib/images";
 import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
 import { collectComfyOutputImages } from "../src/services/comfy";
-import { enrichFieldsWithDiscovery } from "../src/services/comfyDiscovery";
+import { enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/comfyDiscovery";
 import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
@@ -463,6 +463,28 @@ describe("menu-sub (conditional)", () => {
     const fields = flattenConfigInputs(config);
     const expanded = expandActiveFields(fields, { tai_anh: "Upload" });
     expect(expanded.map(f => f.id)).toEqual(["7-image", "6-strength_model"]);
+  });
+});
+
+describe("SDVN model augmentation", () => {
+  it("phát hiện type checkpoints/loras khi node loader chứa SDVN", () => {
+    const fields = [
+      { key: "ckpt", id: "53-ckpt_name", ui: { type: "checkpoints" } },
+      { key: "lora", id: "54-lora_name", ui: { type: "menu", choices: ["a"] } },
+      { key: "vae", id: "10-vae_name", ui: { type: "vae" } }
+    ];
+    const workflow = {
+      "53": { class_type: "SDVN Load Checkpoint" },
+      "54": { class_type: "SDVN Load Lora" },
+      "10": { class_type: "VAELoader" }
+    };
+    expect([...sdvnAugmentTypes(fields, workflow)].sort()).toEqual(["checkpoints", "loras"]);
+  });
+
+  it("không bơm khi node không phải SDVN", () => {
+    const fields = [{ key: "ckpt", id: "1-ckpt_name", ui: { type: "checkpoints" } }];
+    const workflow = { "1": { class_type: "CheckpointLoaderSimple" } };
+    expect(sdvnAugmentTypes(fields, workflow).size).toBe(0);
   });
 });
 

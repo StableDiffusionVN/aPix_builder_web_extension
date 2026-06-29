@@ -72,6 +72,18 @@ export async function loadTemplateConfig(item) {
   return response.json();
 }
 
+/** Workflow JSON (api.json) của template ComfyUI — để dò class_type node (vd loader SDVN). */
+export async function loadComfyWorkflow(item) {
+  if (item?.workflow) return item.workflow;
+  if (!item?.workflowUrl) return null;
+  try {
+    const response = await fetch(item.workflowUrl);
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function flattenConfigInputs(config) {
   return Object.entries(config?.input || {})
     .map(([key, item]) => ({ key, ...item, ui: item?.ui || {} }))
