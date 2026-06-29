@@ -1,5 +1,5 @@
 import { comfyFetch } from "../lib/comfyBridge.js";
-import { dynamicFieldChoices, resolveDynamicFieldType } from "../lib/dynamicTypes.js";
+import { canonicalDynamicType, dynamicFieldChoices, resolveDynamicFieldType } from "../lib/dynamicTypes.js";
 import { resolveComfySession } from "./comfy.js";
 
 const dynamicChoiceSources = {
@@ -209,7 +209,8 @@ export function sdvnAugmentTypes(fields, workflowJson) {
   const out = new Set();
   if (!workflowJson || typeof workflowJson !== "object") return out;
   for (const field of fields || []) {
-    const kind = resolveDynamicFieldType(field);
+    // CHỈ theo ui.type khai báo (loras/checkpoints), KHÔNG suy từ id widget → menu/menu-sub không dính.
+    const kind = canonicalDynamicType(field?.ui?.type);
     if (kind !== "checkpoints" && kind !== "loras") continue;
     const nodeId = String(field?.id ?? "").split("-")[0];
     const classType = nodeId ? workflowJson?.[nodeId]?.class_type : null;

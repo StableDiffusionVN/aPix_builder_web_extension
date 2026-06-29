@@ -484,15 +484,18 @@ describe("import template .zip", () => {
 });
 
 describe("SDVN model augmentation", () => {
-  it("phát hiện type checkpoints/loras khi node loader chứa SDVN", () => {
+  it("chỉ thêm cho field type loras/checkpoints, bỏ qua menu dù node SDVN", () => {
     const fields = [
       { key: "ckpt", id: "53-ckpt_name", ui: { type: "checkpoints" } },
-      { key: "lora", id: "54-lora_name", ui: { type: "menu", choices: ["a"] } },
+      { key: "lora", id: "54-lora_name", ui: { type: "loras" } },
+      // type menu (dù id lora_name + node SDVN) → KHÔNG được thêm danh sách.
+      { key: "loraMenu", id: "55-lora_name", ui: { type: "menu", choices: ["a"] } },
       { key: "vae", id: "10-vae_name", ui: { type: "vae" } }
     ];
     const workflow = {
       "53": { class_type: "SDVN Load Checkpoint" },
       "54": { class_type: "SDVN Load Lora" },
+      "55": { class_type: "SDVN Load Lora" },
       "10": { class_type: "VAELoader" }
     };
     expect([...sdvnAugmentTypes(fields, workflow)].sort()).toEqual(["checkpoints", "loras"]);
