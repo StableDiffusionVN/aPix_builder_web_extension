@@ -43,16 +43,19 @@ async function transact(storeName, mode, action) {
   }
 }
 
-export function saveInput(record) {
-  return transact(INPUT_STORE, "readwrite", store => store.put({ ...record, id: "current" }));
+// Input lưu theo slot: field ảnh đầu tiên dùng "current" (tương thích bản cũ),
+// các field ảnh còn lại dùng "field:<key>".
+export function saveInput(record, slot = "current") {
+  return transact(INPUT_STORE, "readwrite", store => store.put({ ...record, id: slot }));
 }
 
-export function loadInput() {
-  return transact(INPUT_STORE, "readonly", store => store.get("current"));
+export async function loadInputs() {
+  const records = await transact(INPUT_STORE, "readonly", store => store.getAll());
+  return Object.fromEntries(records.map(record => [record.id, record]));
 }
 
-export function clearInput() {
-  return transact(INPUT_STORE, "readwrite", store => store.delete("current"));
+export function clearInput(slot = "current") {
+  return transact(INPUT_STORE, "readwrite", store => store.delete(slot));
 }
 
 export function saveOutput(record) {

@@ -64,8 +64,8 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
   }
 
   return (
-    <section className="tool-section import-section" aria-labelledby="import-title">
-      <h2 id="import-title">Import ảnh</h2>
+    <section className="tool-section import-section" aria-label={label}>
+      <h2>{label}</h2>
       {body}
     </section>
   );

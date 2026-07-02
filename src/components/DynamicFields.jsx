@@ -6,7 +6,7 @@ import { ImportPanel } from "./ImportPanel";
 
 const IMAGE_TYPES = ["image", "image_mask", "file"];
 
-export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", imageInput = null }) {
+export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", getImageInput = null }) {
   const remoteModelDiscovery = usesRemoteModelDiscovery(workflowKind);
   const visible = fields.filter(field => !IMAGE_TYPES.includes(field.ui.type));
   if (!loading && !discoveryLoading && !visible.length) return null;
@@ -95,25 +95,20 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
     if (!isMenuSub(field)) return renderField(field);
     // menu-sub: dropdown chọn nhánh + field con đang chọn, bọc trong một khung.
     const subs = activeSubFields(field, values);
-    const imageSubs = imageInput ? subs.filter(sub => IMAGE_TYPES.includes(sub.ui.type)) : [];
+    const imageSubs = getImageInput ? subs.filter(sub => IMAGE_TYPES.includes(sub.ui.type)) : [];
     const otherSubs = subs.filter(sub => !IMAGE_TYPES.includes(sub.ui.type));
     return (
       <div className="menu-sub-group" key={field.key}>
         {renderField(field)}
         {(imageSubs.length > 0 || otherSubs.length > 0) && (
           <div className="menu-sub-children">
-            {imageSubs.map(sub => (
-              <ImportPanel
-                key={sub.key}
-                embedded
-                label={sub.ui.label || sub.key}
-                image={imageInput.image}
-                onFile={imageInput.onFile}
-                onUrl={imageInput.onUrl}
-                onClear={imageInput.onClear}
-                busy={imageInput.busy}
-              />
-            ))}
+            {imageSubs.map(sub => {
+              // Mỗi field ảnh có slot ảnh riêng — binding lấy từ App theo field key.
+              const binding = getImageInput(sub.key);
+              return binding ? (
+                <ImportPanel key={sub.key} embedded label={sub.ui.label || sub.key} {...binding} />
+              ) : null;
+            })}
             {otherSubs.map(renderField)}
           </div>
         )}

@@ -151,7 +151,7 @@ export function collectComfyOutputImages(config, historyEntry) {
   return images;
 }
 
-export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkflow, config, fields, values, image, signal, onStatus }) {
+export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkflow, config, fields, values, images = {}, signal, onStatus }) {
   const session = await resolveComfySession(url, signal);
   let workflow;
   if (inlineWorkflow) {
@@ -162,16 +162,22 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
     const workflowResponse = await assertOk(await fetch(workflowUrl), "Không thể tải workflow");
     workflow = await workflowResponse.json();
   }
-  let uploaded;
+  // Mỗi field ảnh có record riêng (images: field.key → record); cache upload theo record
+  // để hai field dùng chung một ảnh chỉ tải lên một lần.
+  const uploadCache = new Map();
 
   // menu-sub → bung thành field con đang chọn (chỉ nhánh active được gán).
   for (const field of expandActiveFields(fields, values)) {
     const type = field.ui.type;
     if (["image", "image_mask", "file"].includes(type)) {
-      if (!uploaded) {
+      const record = images[field.key];
+      if (!record) throw new Error(`Thiếu ảnh cho "${field.ui.label || field.key}"`);
+      const cacheKey = record.id || record;
+      if (!uploadCache.has(cacheKey)) {
         onStatus?.("Đang tải ảnh lên ComfyUI…");
-        uploaded = await uploadImage(session, image, signal);
+        uploadCache.set(cacheKey, await uploadImage(session, record, signal));
       }
+      const uploaded = uploadCache.get(cacheKey);
       assignValue(workflow, field.id, uploaded.name || uploaded.filename || uploaded.image);
       continue;
     }
@@ -192,13 +198,13 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
 
   const history = await waitForHistory(session, queued.prompt_id, signal, onStatus);
   const entry = history[queued.prompt_id];
-  const images = collectComfyOutputImages(config, entry);
-  if (!images.length) {
+  const outputImages = collectComfyOutputImages(config, entry);
+  if (!outputImages.length) {
     const status = entry?.status ? ` Status: ${JSON.stringify(entry.status)}` : "";
     throw new Error(`Workflow hoàn tất nhưng không có ảnh tại output node trong template.${status}`);
   }
 
-  return Promise.all(images.map(async (output, index) => {
+  return Promise.all(outputImages.map(async (output, index) => {
     const query = new URLSearchParams({
       filename: output.filename,
       subfolder: output.subfolder || "",
