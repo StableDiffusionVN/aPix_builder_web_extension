@@ -11,15 +11,17 @@ import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
-import { defaultValues, flattenConfigInputs, loadCatalog, loadTemplateConfig } from "./lib/catalog";
+import { allSubFields, defaultValues, flattenConfigInputs, isMenuSub, loadCatalog, loadComfyWorkflow, loadTemplateConfig } from "./lib/catalog";
+
+const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
-import { createCustomRunningHubApp, importTemplateDirectory } from "./lib/templateImport";
+import { createCustomRunningHubApp, importTemplateDirectory, importTemplateZip } from "./lib/templateImport";
 import { usePresets } from "./hooks/usePresets";
 import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
-import { enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
+import { augmentDiscoveryWithSdvn, enrichFieldsWithDiscovery, getComfyDiscovery, resetComfyDiscoveryCache } from "./services/comfyDiscovery";
 import { configFieldsToNodes, getAppDefinition, runRunningHubApp, runRunningHubWorkflow } from "./services/runningHub";
 
 function runnerLabelForKind(kind) {
@@ -275,23 +277,21 @@ export default function App() {
           const nextConfig = await loadTemplateConfig(selected);
           let nextFields = flattenConfigInputs(nextConfig);
           if (selected.kind === "comfy") {
-            if (!settings.comfyUrl) {
-              if (!cancelled) {
-                setConfig(nextConfig);
-                setFields(nextFields);
-                setValues(defaultValues(nextFields, { kind: selected.kind }));
+            // Workflow JSON để dò node loader SDVN (bơm thêm model/lora kể cả khi không có server).
+            const workflowJson = await loadComfyWorkflow(selected);
+            let discovery = { dynamicChoices: {}, modelLists: {} };
+            if (settings.comfyUrl) {
+              if (!cancelled) setDiscoveryLoading(true);
+              try {
+                discovery = await getComfyDiscovery(settings.comfyUrl);
+              } catch (discoveryError) {
+                if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
+              } finally {
+                if (!cancelled) setDiscoveryLoading(false);
               }
-              return;
             }
-            if (!cancelled) setDiscoveryLoading(true);
-            try {
-              const discovery = await getComfyDiscovery(settings.comfyUrl);
-              nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
-            } catch (discoveryError) {
-              if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
-            } finally {
-              if (!cancelled) setDiscoveryLoading(false);
-            }
+            discovery = await augmentDiscoveryWithSdvn(discovery, nextFields, workflowJson);
+            nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
           }
           if (!cancelled) {
             setConfig(nextConfig);
@@ -314,6 +314,14 @@ export default function App() {
     () => Boolean(image && selected && !loadingFields && !awaitingModelDiscovery),
     [image, selected, loadingFields, awaitingModelDiscovery]
   );
+  // Ảnh do menu-sub quản (nhánh nào đó có field ảnh) và không có field ảnh top-level
+  // → ô ảnh hiển thị trong khung sub-menu, ẩn panel "Import ảnh" trên cùng.
+  const imageInMenuSub = useMemo(() => {
+    const hasTopLevelImage = fields.some(field => IMAGE_FIELD_TYPES.includes(field.ui?.type));
+    const hasMenuSubImage = fields.some(field => isMenuSub(field)
+      && allSubFields(field).some(sub => IMAGE_FIELD_TYPES.includes(sub.ui?.type)));
+    return hasMenuSubImage && !hasTopLevelImage;
+  }, [fields]);
   const currentLaneKey = laneKeyForMode(mode);
   const currentLane = lanes[currentLaneKey];
   const otherLaneKey = currentLaneKey === "comfy" ? "rh" : "comfy";
@@ -555,6 +563,16 @@ export default function App() {
     setStatus(`Đã chọn ${item.name}`);
   }
 
+  async function persistImported(imported) {
+    for (const item of imported) await saveCustomCatalogItem(item);
+    setCatalog(current => {
+      const importedIds = new Set(imported.map(item => item.id));
+      return [...current.filter(item => !importedIds.has(item.id)), ...imported];
+    });
+    if (imported[0]) setSelected(imported[0]);
+    setStatus(`Đã import ${imported.length} template`);
+  }
+
   async function chooseTemplateFolder() {
     setError("");
     if (typeof window.showDirectoryPicker !== "function") {
@@ -565,18 +583,26 @@ export default function App() {
     try {
       const directoryHandle = await window.showDirectoryPicker({ mode: "read" });
       setStatus("Đang quét thư mục template…");
-      const imported = await importTemplateDirectory(directoryHandle, mode);
-      for (const item of imported) await saveCustomCatalogItem(item);
-      setCatalog(current => {
-        const importedIds = new Set(imported.map(item => item.id));
-        return [...current.filter(item => !importedIds.has(item.id)), ...imported];
-      });
-      setSelected(imported[0]);
-      setStatus(`Đã import ${imported.length} template`);
+      await persistImported(await importTemplateDirectory(directoryHandle, mode));
     } catch (nextError) {
       if (nextError.name === "AbortError") return;
       setError(nextError.message);
       setStatus("Import template thất bại");
+    } finally {
+      setImportingFolder(false);
+    }
+  }
+
+  async function chooseTemplateZip(file) {
+    if (!file) return;
+    setError("");
+    setImportingFolder(true);
+    try {
+      setStatus("Đang giải nén template…");
+      await persistImported(await importTemplateZip(file, mode));
+    } catch (nextError) {
+      setError(nextError.message);
+      setStatus("Import .zip thất bại");
     } finally {
       setImportingFolder(false);
     }
@@ -681,6 +707,7 @@ export default function App() {
           onSelect={selectWorkflow}
           appInfo={appInfo}
           onImportDirectory={chooseTemplateFolder}
+          onImportZip={chooseTemplateZip}
           onAddCustomApp={addCustomApp}
           onDeleteCustom={removeCustomItem}
           importingFolder={importingFolder}
@@ -697,8 +724,18 @@ export default function App() {
             storageWarning={presetsStorageWarning}
           />
         ) : null}
-        <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
-        <DynamicFields fields={fields} values={values} onChange={updateValue} loading={loadingFields} discoveryLoading={discoveryLoading} workflowKind={mode} />
+        {!imageInMenuSub && (
+          <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
+        )}
+        <DynamicFields
+          fields={fields}
+          values={values}
+          onChange={updateValue}
+          loading={loadingFields}
+          discoveryLoading={discoveryLoading}
+          workflowKind={mode}
+          imageInput={imageInMenuSub ? { image, onFile: importFromFile, onUrl: importFromUrl, onClear: removeInput, busy: currentLane.running } : null}
+        />
 
         <section className="run-section">
           <RunControls

@@ -48,9 +48,18 @@ export function SettingsPanel({ open, settings, onChange, onSave, onTestComfy, o
         <label className="field">
           <span>RunningHub API Key</span>
           <div className="input-action-row">
-            <input type={showKey ? "text" : "password"} value={settings.runningHubApiKey} onChange={event => onChange({ ...settings, runningHubApiKey: event.target.value })} placeholder="Nhập API key" autoComplete="off" />
+            <textarea
+              rows={3}
+              style={{ WebkitTextSecurity: showKey ? "none" : "disc", resize: "vertical", minHeight: 60, width: "100%", fontFamily: "inherit" }}
+              value={settings.runningHubApiKey}
+              onChange={event => onChange({ ...settings, runningHubApiKey: event.target.value })}
+              placeholder="Nhập API key — mỗi dòng một key để tự xoay khi hết điểm/bận"
+              autoComplete="off"
+              spellCheck={false}
+            />
             <button className="reveal-button" onClick={() => setShowKey(value => !value)} aria-label={showKey ? "Ẩn API key" : "Hiện API key"}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
           </div>
+          <span className="field-hint" style={{ fontSize: 12, opacity: 0.7 }}>Nhiều key: mỗi dòng một key. Hết điểm hoặc bận sẽ tự chuyển key kế tiếp.</span>
         </label>
         <div className="settings-note"><CheckCircle2 size={15} /> Extension gọi trực tiếp ComfyUI/RunningHub; không gửi key qua server aPix.</div>
         <button className="primary-button" onClick={onSave}>Lưu Settings</button>

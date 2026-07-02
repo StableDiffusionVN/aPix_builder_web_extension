@@ -158,6 +158,9 @@ main { padding: 0 18px 28px; }
 .danger-text { color: var(--danger) !important; }
 
 .field-stack { display: flex; flex-direction: column; gap: 13px; }
+/* menu-sub: bọc dropdown + field con trong một khung */
+.menu-sub-group { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.menu-sub-children { display: flex; flex-direction: column; gap: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
 .searchable-menu-dropdown { position: relative; }
 .searchable-menu-trigger { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--control); color: var(--text); cursor: pointer; text-align: left; }
 .searchable-menu-trigger:disabled { opacity: .55; cursor: wait; }
@@ -176,6 +179,33 @@ main { padding: 0 18px 28px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
 .field output { color: var(--text); }
+
+.boolean-field { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.boolean-field > span { flex: 1 1 auto; min-width: 0; }
+.boolean-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--control);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.boolean-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .15s ease, background .15s ease;
+}
+.boolean-switch.on { border-color: var(--accent); background: var(--accent-soft); }
+.boolean-switch.on .boolean-switch-knob { transform: translateX(16px); background: var(--accent); }
 input, select, textarea { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); outline: none; background: var(--control); color: var(--text); }
 textarea { resize: vertical; min-height: 72px; line-height: 1.45; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,140,255,.12); }

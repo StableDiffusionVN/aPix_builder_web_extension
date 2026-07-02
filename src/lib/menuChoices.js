@@ -42,3 +42,14 @@ export function resolveMenuStoredValue(storedValue, choices = [], options = {}) 
 export function choiceOptionsFromField(field, choices = field?.ui?.choices || field?.choices || []) {
   return parseMenuChoices(choices, menuChoiceOptions(field?.ui));
 }
+
+/** menu-sub: tra bộ field con của lựa chọn đang chọn (khớp value, raw, hoặc label). */
+export function lookupMenuSubFields(sub = {}, menuValue, choices = [], options = {}) {
+  if (!sub || typeof sub !== "object") return {};
+  if (sub[menuValue]) return sub[menuValue];
+  const parsed = parseMenuChoices(choices, options);
+  const match = parsed.find(item => item.value === menuValue || item.raw === menuValue);
+  if (match?.value && sub[match.value]) return sub[match.value];
+  if (match?.raw && sub[match.raw]) return sub[match.raw];
+  return {};
+}

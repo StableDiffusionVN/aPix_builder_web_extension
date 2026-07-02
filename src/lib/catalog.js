@@ -1,4 +1,4 @@
-import { choiceOptionsFromField, menuChoiceOptions, resolveMenuStoredValue } from "./menuChoices.js";
+import { choiceOptionsFromField, lookupMenuSubFields, menuChoiceOptions, resolveMenuStoredValue } from "./menuChoices.js";
 import { isDynamicFieldType, resolveDynamicFieldType } from "./dynamicTypes.js";
 
 const APP_DESCRIPTIONS = {
@@ -72,18 +72,97 @@ export async function loadTemplateConfig(item) {
   return response.json();
 }
 
+/** Workflow JSON (api.json) của template ComfyUI — để dò class_type node (vd loader SDVN). */
+export async function loadComfyWorkflow(item) {
+  if (item?.workflow) return item.workflow;
+  if (!item?.workflowUrl) return null;
+  try {
+    const response = await fetch(item.workflowUrl);
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function flattenConfigInputs(config) {
   return Object.entries(config?.input || {})
     .map(([key, item]) => ({ key, ...item, ui: item?.ui || {} }))
-    .filter(item => item.id && item.ui.type !== "note" && item.ui.type !== "markdown");
+    // Giữ field có id; menu-sub có thể không có id (chỉ là bộ chọn nhánh) → vẫn giữ.
+    .filter(item => (item.id || item.ui.type === "menu-sub") && item.ui.type !== "note" && item.ui.type !== "markdown");
+}
+
+// MARK: menu-sub (conditional) — bộ chọn nhánh hiển thị field con khác nhau theo lựa chọn.
+
+export function isMenuSub(field) {
+  return field?.ui?.type === "menu-sub";
+}
+
+/** Lựa chọn đang hiệu lực của một menu-sub (đã chuẩn hoá về value). */
+export function activeMenuChoice(field, values) {
+  return resolveMenuStoredValue(
+    values?.[field.key] ?? field.ui?.value,
+    fieldChoices(field),
+    menuChoiceOptions(field.ui)
+  );
+}
+
+/** Field con của lựa chọn đang chọn (key tổng hợp ổn định: `${parent}.${choice}.${child}`). */
+export function activeSubFields(field, values) {
+  if (!isMenuSub(field)) return [];
+  const selected = activeMenuChoice(field, values);
+  const sub = lookupMenuSubFields(field.ui?.sub || {}, selected, fieldChoices(field), menuChoiceOptions(field.ui));
+  return Object.entries(sub).map(([childKey, child]) => ({
+    key: `${field.key}.${selected}.${childKey}`,
+    parentKey: field.key,
+    choice: selected,
+    ...child,
+    ui: child?.ui || {}
+  }));
+}
+
+/** Mọi field con (mọi nhánh) — để seed default. */
+export function allSubFields(field) {
+  if (!isMenuSub(field)) return [];
+  const out = [];
+  for (const [choice, children] of Object.entries(field.ui?.sub || {})) {
+    for (const [childKey, child] of Object.entries(children || {})) {
+      out.push({ key: `${field.key}.${choice}.${childKey}`, parentKey: field.key, choice, ...child, ui: child?.ui || {} });
+    }
+  }
+  return out;
+}
+
+/** Bung danh sách field để render/chạy: menu-sub → [parent (nếu có id)] + field con đang chọn. */
+export function expandActiveFields(fields, values) {
+  const out = [];
+  for (const field of fields) {
+    if (isMenuSub(field)) {
+      if (field.id) out.push(field);   // gửi giá trị lựa chọn tới node nếu menu có id
+      out.push(...activeSubFields(field, values));
+    } else {
+      out.push(field);
+    }
+  }
+  return out;
+}
+
+function fieldDefault(field, kind) {
+  if (isModelChoiceField(field, { kind })) {
+    const choices = fieldChoices(field);
+    if (choices.length) return resolveModelFieldValue(field, choices);
+  }
+  return field.ui.value ?? (field.ui.type === "seed" ? "random_seed" : "");
 }
 
 export function defaultValues(fields, { kind } = {}) {
-  return Object.fromEntries(fields.map(field => {
-    if (isModelChoiceField(field, { kind })) {
-      const choices = fieldChoices(field);
-      if (choices.length) return [field.key, resolveModelFieldValue(field, choices)];
+  const out = {};
+  for (const field of fields) {
+    if (isMenuSub(field)) {
+      out[field.key] = resolveMenuStoredValue(field.ui.value, fieldChoices(field), menuChoiceOptions(field.ui));
+      for (const sub of allSubFields(field)) out[sub.key] = fieldDefault(sub, kind);
+      continue;
     }
-    return [field.key, field.ui.value ?? (field.ui.type === "seed" ? "random_seed" : "")];
-  }));
+    out[field.key] = fieldDefault(field, kind);
+  }
+  return out;
 }

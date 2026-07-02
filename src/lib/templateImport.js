@@ -111,6 +111,24 @@ export async function importTemplateDirectory(rootHandle, kind) {
   return imported;
 }
 
+/** Import template từ tệp .zip (vd xuất ra từ app chính) — giải nén rồi dùng importTemplateFiles. */
+export async function importTemplateZip(file, kind) {
+  const { unzipSync } = await import("fflate");
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const entries = unzipSync(bytes);
+  const files = Object.entries(entries)
+    .filter(([name]) => !name.endsWith("/"))
+    .map(([name, data]) => {
+      const base = name.split("/").pop() || name;
+      const synthetic = new File([data], base);
+      // Giữ đường dẫn tương đối để gom theo thư mục (manifest + api.json cùng dir).
+      Object.defineProperty(synthetic, "webkitRelativePath", { value: name });
+      return synthetic;
+    });
+  if (!files.length) throw new Error("Tệp .zip rỗng");
+  return importTemplateFiles(files, kind);
+}
+
 export async function importTemplateFiles(fileList, kind) {
   if (!['comfy', 'runninghub-workflow'].includes(kind)) {
     throw new Error("Chỉ ComfyUI và RH Workflow hỗ trợ import thư mục template");

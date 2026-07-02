@@ -4,11 +4,12 @@ import { extensionForType, fileStem, formatBytes } from "../src/lib/images";
 import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
 import { collectComfyOutputImages } from "../src/services/comfy";
-import { enrichFieldsWithDiscovery } from "../src/services/comfyDiscovery";
-import { defaultValues, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
+import { enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/comfyDiscovery";
+import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
-import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles } from "../src/lib/templateImport";
+import { createCustomRunningHubApp, importTemplateDirectory, importTemplateFiles, importTemplateZip } from "../src/lib/templateImport";
+import { zipSync } from "fflate";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppInfoCard } from "../src/components/AppInfoCard";
 import { OutputLibrary } from "../src/components/OutputLibrary";
@@ -406,6 +407,104 @@ describe("RunningHub workflow mapping", () => {
       { nodeId: "7", fieldName: "image", fieldType: "IMAGE", fieldValue: image },
       { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
     ]);
+  });
+});
+
+describe("menu-sub (conditional)", () => {
+  const config = {
+    input: {
+      tai_anh: {
+        ui: {
+          type: "menu-sub",
+          label: "Tải ảnh",
+          choices: ["Upload", "URL"],
+          value: "Upload",
+          sub: {
+            Upload: { up_img: { id: "7-image", ui: { type: "image", label: "Image" } } },
+            URL: {
+              up_url: { id: "7-url", ui: { type: "string", label: "URL" } },
+              up_steps: { id: "2-steps", ui: { type: "int", label: "Steps", value: 12 } }
+            }
+          }
+        }
+      },
+      strength: { id: "6-strength_model", ui: { type: "float", value: 0.8 } }
+    }
+  };
+
+  it("giữ menu-sub (không id) khi flatten + seed default mọi nhánh", () => {
+    const fields = flattenConfigInputs(config);
+    expect(fields.map(f => f.key)).toEqual(["tai_anh", "strength"]);
+    const values = defaultValues(fields, { kind: "comfy" });
+    expect(values.tai_anh).toBe("Upload");
+    expect(values["tai_anh.URL.up_url"]).toBe("");
+    expect(values["tai_anh.URL.up_steps"]).toBe(12);
+    expect(values.strength).toBe(0.8);
+  });
+
+  it("activeSubFields đổi theo lựa chọn", () => {
+    const fields = flattenConfigInputs(config);
+    const menu = fields[0];
+    expect(activeSubFields(menu, { tai_anh: "Upload" }).map(f => f.id)).toEqual(["7-image"]);
+    expect(activeSubFields(menu, { tai_anh: "URL" }).map(f => f.id)).toEqual(["7-url", "2-steps"]);
+  });
+
+  it("configFieldsToNodes chỉ gửi field con của nhánh đang chọn", () => {
+    const image = { blob: {}, name: "in.png" };
+    const fields = flattenConfigInputs(config);
+    const values = { ...defaultValues(fields, { kind: "comfy" }), tai_anh: "URL", "tai_anh.URL.up_url": "http://x/y.png" };
+    expect(configFieldsToNodes(fields, values, image)).toEqual([
+      { nodeId: "7", fieldName: "url", fieldType: "STRING", fieldValue: "http://x/y.png" },
+      { nodeId: "2", fieldName: "steps", fieldType: "INT", fieldValue: 12 },
+      { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
+    ]);
+  });
+
+  it("expandActiveFields bung nhánh Upload có field ảnh", () => {
+    const fields = flattenConfigInputs(config);
+    const expanded = expandActiveFields(fields, { tai_anh: "Upload" });
+    expect(expanded.map(f => f.id)).toEqual(["7-image", "6-strength_model"]);
+  });
+});
+
+describe("import template .zip", () => {
+  it("giải nén .zip và import được template comfy", async () => {
+    const enc = new TextEncoder();
+    const cfg = JSON.stringify({ app: { name: "Zip Test" }, input: { x: { id: "1-text", ui: { type: "string" } } }, output: { o: { id: "9", ui: { type: "image" } } } });
+    const api = JSON.stringify({ "1": { class_type: "X", inputs: { text: "" } }, "9": { class_type: "SaveImage", inputs: {} } });
+    const zipped = zipSync({
+      "zip-test/app_build.json": enc.encode(cfg),
+      "zip-test/api.json": enc.encode(api)
+    });
+    const file = new File([zipped], "zip-test.zip");
+    const imported = await importTemplateZip(file, "comfy");
+    expect(imported.length).toBe(1);
+    expect(imported[0].name).toBe("Zip Test");
+  });
+});
+
+describe("SDVN model augmentation", () => {
+  it("chỉ thêm cho field type loras/checkpoints, bỏ qua menu dù node SDVN", () => {
+    const fields = [
+      { key: "ckpt", id: "53-ckpt_name", ui: { type: "checkpoints" } },
+      { key: "lora", id: "54-lora_name", ui: { type: "loras" } },
+      // type menu (dù id lora_name + node SDVN) → KHÔNG được thêm danh sách.
+      { key: "loraMenu", id: "55-lora_name", ui: { type: "menu", choices: ["a"] } },
+      { key: "vae", id: "10-vae_name", ui: { type: "vae" } }
+    ];
+    const workflow = {
+      "53": { class_type: "SDVN Load Checkpoint" },
+      "54": { class_type: "SDVN Load Lora" },
+      "55": { class_type: "SDVN Load Lora" },
+      "10": { class_type: "VAELoader" }
+    };
+    expect([...sdvnAugmentTypes(fields, workflow)].sort()).toEqual(["checkpoints", "loras"]);
+  });
+
+  it("không bơm khi node không phải SDVN", () => {
+    const fields = [{ key: "ckpt", id: "1-ckpt_name", ui: { type: "checkpoints" } }];
+    const workflow = { "1": { class_type: "CheckpointLoaderSimple" } };
+    expect(sdvnAugmentTypes(fields, workflow).size).toBe(0);
   });
 });
 
