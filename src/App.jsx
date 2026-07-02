@@ -500,7 +500,7 @@ export default function App() {
       return setError("Cần RunningHub API Key để chạy lựa chọn này");
     }
 
-    const job = createJobSnapshot(jobImage);
+    const job = createJobSnapshot(imageOverride);
     const laneKey = laneKeyForKind(job.selected.kind);
     const lane = lanes[laneKey];
     if (lane.running || lane.queueRef.current.length > 0) {
