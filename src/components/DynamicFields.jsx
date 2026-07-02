@@ -51,6 +51,23 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
         </label>
       );
     }
+    if (type === "boolean" || type === "checkbox") {
+      const checked = (values[field.key] ?? field.ui.value) === true;
+      return (
+        <div className="field boolean-field" key={field.key}>
+          <span>{field.ui.label || field.key}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            className={`boolean-switch${checked ? " on" : ""}`}
+            onClick={() => onChange(field.key, !checked)}
+          >
+            <span className="boolean-switch-knob" />
+          </button>
+        </div>
+      );
+    }
     if (type === "text") {
       return (
         <label className="field" key={field.key}>
