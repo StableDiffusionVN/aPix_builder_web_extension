@@ -4,7 +4,7 @@ import { extensionForType, fileStem, formatBytes } from "../src/lib/images";
 import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
 import { collectComfyOutputImages } from "../src/services/comfy";
-import { enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/comfyDiscovery";
+import { augmentDiscoveryWithSdvn, enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/comfyDiscovery";
 import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
@@ -508,6 +508,28 @@ describe("SDVN model augmentation", () => {
     const fields = [{ key: "ckpt", id: "1-ckpt_name", ui: { type: "checkpoints" } }];
     const workflow = { "1": { class_type: "CheckpointLoaderSimple" } };
     expect(sdvnAugmentTypes(fields, workflow).size).toBe(0);
+  });
+
+  it("bơm thư viện SDVN với 'None' đầu danh sách, server trước, SDVN sau", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ "Sdvn-A.safetensors": {}, "Sdvn-B.safetensors": {} })
+    });
+    try {
+      const fields = [{ key: "ckpt", id: "3-Ckpt_name", ui: { type: "checkpoints" } }];
+      const workflow = { "3": { class_type: "SDVN Load Checkpoint" } };
+      const discovery = { dynamicChoices: { checkpoints: ["Server-1.safetensors"] } };
+      const augmented = await augmentDiscoveryWithSdvn(discovery, fields, workflow);
+      expect(augmented.dynamicChoices.checkpoints).toEqual([
+        "None",
+        "Server-1.safetensors",
+        "Sdvn-A.safetensors",
+        "Sdvn-B.safetensors"
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
