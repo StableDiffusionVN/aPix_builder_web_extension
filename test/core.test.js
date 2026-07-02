@@ -397,14 +397,17 @@ describe("custom catalog import", () => {
 });
 
 describe("RunningHub workflow mapping", () => {
-  it("maps template field IDs and injects the current image", () => {
-    const image = { blob: {}, name: "input.png" };
+  it("maps template field IDs and injects each field's own image", () => {
+    const refImage = { blob: {}, name: "ref.png" };
+    const maskImage = { blob: {}, name: "mask.png" };
     const fields = [
       { key: "input", id: "7-image", ui: { type: "image" } },
+      { key: "mask", id: "9-image", ui: { type: "image" } },
       { key: "strength", id: "6-strength_model", ui: { type: "float" } }
     ];
-    expect(configFieldsToNodes(fields, { strength: 0.8 }, image)).toEqual([
-      { nodeId: "7", fieldName: "image", fieldType: "IMAGE", fieldValue: image },
+    expect(configFieldsToNodes(fields, { strength: 0.8 }, { input: refImage, mask: maskImage })).toEqual([
+      { nodeId: "7", fieldName: "image", fieldType: "IMAGE", fieldValue: refImage },
+      { nodeId: "9", fieldName: "image", fieldType: "IMAGE", fieldValue: maskImage },
       { nodeId: "6", fieldName: "strength_model", fieldType: "FLOAT", fieldValue: 0.8 }
     ]);
   });

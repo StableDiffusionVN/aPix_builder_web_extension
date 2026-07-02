@@ -11,12 +11,12 @@ import { RunControls } from "./components/RunControls";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
-import { allSubFields, defaultValues, flattenConfigInputs, isMenuSub, loadCatalog, loadComfyWorkflow, loadTemplateConfig } from "./lib/catalog";
+import { defaultValues, expandActiveFields, flattenConfigInputs, loadCatalog, loadComfyWorkflow, loadTemplateConfig } from "./lib/catalog";
 
 const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
-import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInput, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
+import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInputs, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory, importTemplateZip } from "./lib/templateImport";
 import { usePresets } from "./hooks/usePresets";
 import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
@@ -65,7 +65,9 @@ export default function App() {
   const [config, setConfig] = useState(null);
   const [fields, setFields] = useState([]);
   const [values, setValues] = useState({});
-  const [image, setImage] = useState(null);
+  // Ảnh input theo slot: field ảnh đầu tiên → "current" (tương thích bản cũ + import từ menu
+  // chuột phải), các field ảnh còn lại → "field:<key>". Template nhiều input image → nhiều panel.
+  const [images, setImages] = useState({});
   const [outputs, setOutputs] = useState([]);
   const [checked, setChecked] = useState(new Set());
   const [settings, setSettings] = useState({ comfyUrl: "http://127.0.0.1:8188", runningHubApiKey: "", theme: "system" });
@@ -94,19 +96,19 @@ export default function App() {
     presetsStorageWarning
   } = usePresets();
 
-  const importFromFile = useCallback(async file => {
+  const importFromFile = useCallback(async (slot, file) => {
     setError("");
     try {
       const record = await normalizeImageRecord(file, file.name);
-      await saveInput(record);
-      setImage(record);
+      await saveInput(record, slot);
+      setImages(current => ({ ...current, [slot]: record }));
       setStatus("Đã import ảnh");
     } catch (nextError) {
       setError(nextError.message);
     }
   }, []);
 
-  const importFromUrl = useCallback(async (url, options = {}) => {
+  const importFromUrl = useCallback(async (slot, url, options = {}) => {
     setError("");
     setStatus("Đang import ảnh từ trang web…");
     try {
@@ -123,8 +125,8 @@ export default function App() {
       let name = suggestedName || "web-image";
       try { if (!suggestedName) name = new URL(url).pathname.split("/").filter(Boolean).pop() || name; } catch { /* data URL */ }
       const record = await normalizeImageRecord(blob, name);
-      await saveInput(record);
-      setImage(record);
+      await saveInput(record, slot);
+      setImages(current => ({ ...current, [slot]: record }));
       setStatus("Đã import ảnh từ trang web");
       return record;
     } catch (nextError) {
@@ -152,7 +154,8 @@ export default function App() {
         return null;
       }
 
-      const importedImage = await importFromUrl(payload.url, {
+      // Import từ menu chuột phải luôn vào slot "current" (field ảnh đầu tiên).
+      const importedImage = await importFromUrl("current", payload.url, {
         stagingId: payload.stagingId,
         embeddedImage: payload.embeddedImage,
         pageUrl: payload.pageUrl,
@@ -173,7 +176,7 @@ export default function App() {
   }, [importFromUrl]);
 
   useEffect(() => {
-    Promise.all([loadCatalog(), listCustomCatalogItems(), loadInput(), listOutputs(), readSettings(), readWorkspaceState()]).then(([items, customItems, savedImage, savedOutputs, savedSettings, savedWorkspace]) => {
+    Promise.all([loadCatalog(), listCustomCatalogItems(), loadInputs(), listOutputs(), readSettings(), readWorkspaceState()]).then(([items, customItems, savedImages, savedOutputs, savedSettings, savedWorkspace]) => {
       const defaultsById = new Map(items.map(item => [item.id, item]));
       const mergedItems = [...items, ...customItems.filter(item => !defaultsById.has(item.id))];
       const savedMode = ["comfy", "runninghub-workflow", "runninghub-app"].includes(savedWorkspace.mode)
@@ -187,7 +190,7 @@ export default function App() {
       setMode(savedMode);
       setSelectedByMode(savedSelectedByMode);
       setSelected(restoredSelected);
-      setImage(savedImage || null);
+      setImages(savedImages || {});
       setOutputs(savedOutputs);
       setSettings(savedSettings);
       setSettingsDraft(savedSettings);
@@ -310,18 +313,30 @@ export default function App() {
   }, [selected, settings.runningHubApiKey, settings.comfyUrl]);
 
   const awaitingModelDiscovery = selected?.kind === "comfy" && discoveryLoading;
-  const canSubmit = useMemo(
-    () => Boolean(image && selected && !loadingFields && !awaitingModelDiscovery),
-    [image, selected, loadingFields, awaitingModelDiscovery]
+  // Field ảnh đang hiển thị (top-level + nhánh menu-sub active), theo thứ tự khai báo.
+  const activeImageFields = useMemo(
+    () => expandActiveFields(fields, values).filter(field => IMAGE_FIELD_TYPES.includes(field.ui?.type)),
+    [fields, values]
   );
-  // Ảnh do menu-sub quản (nhánh nào đó có field ảnh) và không có field ảnh top-level
-  // → ô ảnh hiển thị trong khung sub-menu, ẩn panel "Import ảnh" trên cùng.
-  const imageInMenuSub = useMemo(() => {
-    const hasTopLevelImage = fields.some(field => IMAGE_FIELD_TYPES.includes(field.ui?.type));
-    const hasMenuSubImage = fields.some(field => isMenuSub(field)
-      && allSubFields(field).some(sub => IMAGE_FIELD_TYPES.includes(sub.ui?.type)));
-    return hasMenuSubImage && !hasTopLevelImage;
-  }, [fields]);
+  // Slot lưu ảnh cho từng field: field đầu → "current", còn lại → "field:<key>".
+  const imageSlots = useMemo(() => {
+    const map = {};
+    activeImageFields.forEach((field, index) => {
+      map[field.key] = index === 0 ? "current" : `field:${field.key}`;
+    });
+    return map;
+  }, [activeImageFields]);
+  const canSubmit = useMemo(
+    () => Boolean(
+      selected && !loadingFields && !awaitingModelDiscovery
+      && activeImageFields.every(field => images[imageSlots[field.key]])
+    ),
+    [selected, loadingFields, awaitingModelDiscovery, activeImageFields, images, imageSlots]
+  );
+  const topLevelImageFields = useMemo(
+    () => fields.filter(field => IMAGE_FIELD_TYPES.includes(field.ui?.type)),
+    [fields]
+  );
   const currentLaneKey = laneKeyForMode(mode);
   const currentLane = lanes[currentLaneKey];
   const otherLaneKey = currentLaneKey === "comfy" ? "rh" : "comfy";
@@ -331,6 +346,15 @@ export default function App() {
   );
 
   function createJobSnapshot(imageOverride = null) {
+    // Chốt ảnh cho từng field ảnh tại thời điểm queue; override (auto-run từ menu
+    // chuột phải) chỉ thay ảnh của slot "current" (field ảnh đầu tiên).
+    const imagesByFieldKey = {};
+    for (const field of activeImageFields) {
+      const slot = imageSlots[field.key];
+      imagesByFieldKey[field.key] = (imageOverride && slot === "current")
+        ? imageOverride
+        : images[slot] || null;
+    }
     return {
       id: crypto.randomUUID(),
       queuedAt: Date.now(),
@@ -338,7 +362,7 @@ export default function App() {
       config,
       fields,
       values: { ...values },
-      image: imageOverride || image,
+      images: imagesByFieldKey,
       settings: {
         comfyUrl: settings.comfyUrl,
         runningHubApiKey: settings.runningHubApiKey
@@ -406,27 +430,31 @@ export default function App() {
           config: job.config,
           fields: job.fields,
           values: job.values,
-          image: job.image,
+          images: job.images,
           signal: controller.signal,
           onStatus: updateStatus
         });
       } else if (job.selected.kind === "runninghub-workflow") {
-        const nodes = configFieldsToNodes(job.fields, job.values, job.image);
+        const nodes = configFieldsToNodes(job.fields, job.values, job.images);
         results = await runRunningHubWorkflow({
           apiKey: job.settings.runningHubApiKey,
           workflowId: String(job.config?.runninghub?.workflowId || ""),
           nodes,
-          image: job.image,
           signal: controller.signal,
           onStatus: updateStatus
         });
       } else {
-        const nodes = job.fields.map(field => ({ ...field.node, fieldValue: job.values[field.key] }));
+        // RH App: node media nhận record ảnh của chính field đó trong fieldValue.
+        const nodes = job.fields.map(field => ({
+          ...field.node,
+          fieldValue: IMAGE_FIELD_TYPES.includes(field.ui?.type)
+            ? (job.images[field.key] ?? field.node.fieldValue)
+            : job.values[field.key]
+        }));
         results = await runRunningHubApp({
           apiKey: job.settings.runningHubApiKey,
           webappId: job.selected.slug,
           nodes,
-          image: job.image,
           signal: controller.signal,
           onStatus: updateStatus
         });
@@ -454,9 +482,19 @@ export default function App() {
   }
 
   function enqueueRun(imageOverride = null) {
-    const jobImage = imageOverride || image;
-    if (!jobImage) return setError("Hãy import ảnh trước khi chạy");
     if (!selected) return setError("Hãy chọn template hoặc app");
+    const missingField = activeImageFields.find(field => {
+      const slot = imageSlots[field.key];
+      if (imageOverride && slot === "current") return false;
+      return !images[slot];
+    });
+    if (missingField) {
+      return setError(
+        activeImageFields.length > 1
+          ? `Hãy import ảnh cho "${missingField.ui?.label || missingField.key}" trước khi chạy`
+          : "Hãy import ảnh trước khi chạy"
+      );
+    }
     if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
       setSettingsOpen(true);
       return setError("Cần RunningHub API Key để chạy lựa chọn này");
@@ -649,14 +687,31 @@ export default function App() {
     setStatus(`Đã xóa ${item.name}`);
   }
 
-  async function removeInput() {
-    await clearInput();
-    setImage(null);
+  async function removeInput(slot) {
+    await clearInput(slot);
+    setImages(current => {
+      const next = { ...current };
+      delete next[slot];
+      return next;
+    });
   }
 
   function updateValue(key, value) {
     setValues(current => ({ ...current, [key]: value }));
   }
+
+  // Binding panel import cho một field ảnh: ảnh + handler gắn với slot của field đó.
+  const getImageInput = useCallback(fieldKey => {
+    const slot = imageSlots[fieldKey];
+    if (!slot) return null;
+    return {
+      image: images[slot] || null,
+      onFile: file => importFromFile(slot, file),
+      onUrl: (url, options) => importFromUrl(slot, url, options),
+      onClear: () => removeInput(slot),
+      busy: currentLane.running
+    };
+  }, [imageSlots, images, importFromFile, importFromUrl, currentLane.running]);
 
   async function run() {
     enqueueRun();
@@ -724,9 +779,16 @@ export default function App() {
             storageWarning={presetsStorageWarning}
           />
         ) : null}
-        {!imageInMenuSub && (
-          <ImportPanel image={image} onFile={importFromFile} onUrl={importFromUrl} onClear={removeInput} busy={currentLane.running} />
-        )}
+        {topLevelImageFields.map(field => {
+          const binding = getImageInput(field.key);
+          return binding ? (
+            <ImportPanel
+              key={field.key}
+              label={topLevelImageFields.length > 1 ? (field.ui?.label || field.key) : "Import ảnh"}
+              {...binding}
+            />
+          ) : null;
+        })}
         <DynamicFields
           fields={fields}
           values={values}
@@ -734,7 +796,7 @@ export default function App() {
           loading={loadingFields}
           discoveryLoading={discoveryLoading}
           workflowKind={mode}
-          imageInput={imageInMenuSub ? { image, onFile: importFromFile, onUrl: importFromUrl, onClear: removeInput, busy: currentLane.running } : null}
+          getImageInput={getImageInput}
         />
 
         <section className="run-section">

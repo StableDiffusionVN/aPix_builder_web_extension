@@ -234,17 +234,20 @@ function isMediaType(type) {
   return ["IMAGE", "AUDIO", "VIDEO"].includes(String(type || "").toUpperCase());
 }
 
-export async function prepareNodes(apiKey, nodes, image, signal, onStatus) {
-  let uploadedName = "";
+export async function prepareNodes(apiKey, nodes, signal, onStatus) {
+  // Mỗi node media mang record ảnh riêng trong fieldValue; cache upload theo record
+  // để hai node dùng chung một ảnh chỉ tải lên một lần.
+  const uploadCache = new Map();
   const prepared = [];
   for (const node of nodes) {
     let value = node.fieldValue ?? "";
-    if (isMediaType(node.fieldType) && image) {
-      if (!uploadedName) {
+    if (isMediaType(node.fieldType) && value && typeof value === "object" && value.blob) {
+      const cacheKey = value.id || value;
+      if (!uploadCache.has(cacheKey)) {
         onStatus?.("Đang tải ảnh lên RunningHub…");
-        uploadedName = await uploadImage(apiKey, image, signal);
+        uploadCache.set(cacheKey, await uploadImage(apiKey, value, signal));
       }
-      value = uploadedName;
+      value = uploadCache.get(cacheKey);
     } else if (value === "random_seed") {
       value = String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
     } else if (value != null && typeof value !== "string") {
@@ -259,8 +262,9 @@ export async function prepareNodes(apiKey, nodes, image, signal, onStatus) {
   return prepared;
 }
 
-export function configFieldsToNodes(fields, values, image) {
+export function configFieldsToNodes(fields, values, images = {}) {
   // menu-sub → bung thành field con đang chọn; bỏ field không có id (vd menu-sub chỉ là bộ chọn).
+  // images: map field.key → record ảnh (mỗi field ảnh có ảnh riêng).
   return expandActiveFields(fields, values)
     .filter(field => field.id)
     .map(field => {
@@ -270,14 +274,14 @@ export function configFieldsToNodes(fields, values, image) {
         nodeId,
         fieldName,
         fieldType: imageField ? "IMAGE" : String(field.ui.type || "STRING").toUpperCase(),
-        fieldValue: imageField ? image : values[field.key]
+        fieldValue: imageField ? images[field.key] : values[field.key]
       };
     });
 }
 
-export async function runRunningHubApp({ apiKey, webappId, nodes, image, signal, onStatus }) {
+export async function runRunningHubApp({ apiKey, webappId, nodes, signal, onStatus }) {
   return runWithRhFailover(apiKey, onStatus, async key => {
-    const nodeInfoList = await prepareNodes(key, nodes, image, signal, onStatus);
+    const nodeInfoList = await prepareNodes(key, nodes, signal, onStatus);
     onStatus?.("Đang gửi AI App…");
     const response = await fetch(`${BASE_URL}/task/openapi/ai-app/run`, {
       method: "POST",
@@ -290,9 +294,9 @@ export async function runRunningHubApp({ apiKey, webappId, nodes, image, signal,
   });
 }
 
-export async function runRunningHubWorkflow({ apiKey, workflowId, nodes, image, signal, onStatus }) {
+export async function runRunningHubWorkflow({ apiKey, workflowId, nodes, signal, onStatus }) {
   return runWithRhFailover(apiKey, onStatus, async key => {
-    const nodeInfoList = await prepareNodes(key, nodes, image, signal, onStatus);
+    const nodeInfoList = await prepareNodes(key, nodes, signal, onStatus);
     onStatus?.("Đang gửi workflow…");
     const response = await fetch(`${BASE_URL}/task/openapi/create`, {
       method: "POST",

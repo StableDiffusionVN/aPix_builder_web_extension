@@ -6,7 +6,7 @@ import { ImportPanel } from "./ImportPanel";
 
 const IMAGE_TYPES = ["image", "image_mask", "file"];
 
-export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", imageInput = null }) {
+export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", getImageInput = null }) {
   const remoteModelDiscovery = usesRemoteModelDiscovery(workflowKind);
   const visible = fields.filter(field => !IMAGE_TYPES.includes(field.ui.type));
   if (!loading && !discoveryLoading && !visible.length) return null;
@@ -38,6 +38,31 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
             loading={discoveryLoading && usesRemoteModels}
             disabled={discoveryLoading && usesRemoteModels && options.length === 0}
             emptyMessage={usesRemoteModels && discoveryLoading ? "Đang tải…" : "Không có lựa chọn"}
+          />
+        </label>
+      );
+    }
+
+    // Seed: giá trị "random_seed" không hiện chữ thô — input trống + placeholder "random" (chữ mờ);
+    // xóa trắng input là quay về random mỗi lần chạy (giống SeedField ở app chính).
+    if (type === "seed" || field.ui.value === "random_seed") {
+      const raw = values[field.key] ?? field.ui.value ?? "";
+      const isRandom = raw === "random_seed" || raw === "";
+      return (
+        <label className="field" key={field.key}>
+          <span>{field.ui.label || field.key}</span>
+          <input
+            type="number"
+            min={field.ui.minimum ?? 0}
+            max={field.ui.maximum}
+            step={field.ui.step ?? 1}
+            placeholder="random"
+            value={isRandom ? "" : raw}
+            onChange={event => {
+              if (event.target.value === "") return onChange(field.key, "random_seed");
+              const next = Math.trunc(Number(event.target.value));
+              onChange(field.key, Number.isFinite(next) ? next : "random_seed");
+            }}
           />
         </label>
       );
@@ -95,25 +120,20 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
     if (!isMenuSub(field)) return renderField(field);
     // menu-sub: dropdown chọn nhánh + field con đang chọn, bọc trong một khung.
     const subs = activeSubFields(field, values);
-    const imageSubs = imageInput ? subs.filter(sub => IMAGE_TYPES.includes(sub.ui.type)) : [];
+    const imageSubs = getImageInput ? subs.filter(sub => IMAGE_TYPES.includes(sub.ui.type)) : [];
     const otherSubs = subs.filter(sub => !IMAGE_TYPES.includes(sub.ui.type));
     return (
       <div className="menu-sub-group" key={field.key}>
         {renderField(field)}
         {(imageSubs.length > 0 || otherSubs.length > 0) && (
           <div className="menu-sub-children">
-            {imageSubs.map(sub => (
-              <ImportPanel
-                key={sub.key}
-                embedded
-                label={sub.ui.label || sub.key}
-                image={imageInput.image}
-                onFile={imageInput.onFile}
-                onUrl={imageInput.onUrl}
-                onClear={imageInput.onClear}
-                busy={imageInput.busy}
-              />
-            ))}
+            {imageSubs.map(sub => {
+              // Mỗi field ảnh có slot ảnh riêng — binding lấy từ App theo field key.
+              const binding = getImageInput(sub.key);
+              return binding ? (
+                <ImportPanel key={sub.key} embedded label={sub.ui.label || sub.key} {...binding} />
+              ) : null;
+            })}
             {otherSubs.map(renderField)}
           </div>
         )}

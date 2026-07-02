@@ -39,7 +39,7 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
 
       {image && (
         <div className="selected-image" data-testid="selected-image">
-          <img src={previewUrl} alt="Ảnh input" />
+          {previewUrl ? <img src={previewUrl} alt="Ảnh input" /> : null}
           <div className="image-meta">
             <strong>{image.name}</strong>
             <span>{image.width} × {image.height} · {formatBytes(image.size)}</span>
@@ -64,8 +64,8 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
   }
 
   return (
-    <section className="tool-section import-section" aria-labelledby="import-title">
-      <h2 id="import-title">Import ảnh</h2>
+    <section className="tool-section import-section" aria-label={label}>
+      <h2>{label}</h2>
       {body}
     </section>
   );
