@@ -219,14 +219,15 @@ export function sdvnAugmentTypes(fields, workflowJson) {
   return out;
 }
 
-/** Gộp danh sách model SDVN vào discovery cho các type có node loader SDVN. */
+/** Gộp danh sách model SDVN vào discovery cho các type có node loader SDVN
+ * ("None" đầu tiên, danh sách server trước, SDVN sau — giống app chính). */
 export async function augmentDiscoveryWithSdvn(discovery, fields, workflowJson, signal) {
   const types = sdvnAugmentTypes(fields, workflowJson);
   if (!types.size) return discovery;
   const dynamicChoices = { ...(discovery?.dynamicChoices || {}) };
   for (const type of types) {
     const extra = await fetchSdvnLibraryNames(type, signal);
-    if (extra.length) dynamicChoices[type] = uniqueStrings([...(dynamicChoices[type] || []), ...extra]);
+    if (extra.length) dynamicChoices[type] = uniqueStrings(["None", ...(dynamicChoices[type] || []), ...extra]);
   }
   return { ...discovery, dynamicChoices, modelLists: dynamicChoices };
 }
