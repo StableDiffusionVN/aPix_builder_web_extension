@@ -43,6 +43,31 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
       );
     }
 
+    // Seed: giá trị "random_seed" không hiện chữ thô — input trống + placeholder "random" (chữ mờ);
+    // xóa trắng input là quay về random mỗi lần chạy (giống SeedField ở app chính).
+    if (type === "seed" || field.ui.value === "random_seed") {
+      const raw = values[field.key] ?? field.ui.value ?? "";
+      const isRandom = raw === "random_seed" || raw === "";
+      return (
+        <label className="field" key={field.key}>
+          <span>{field.ui.label || field.key}</span>
+          <input
+            type="number"
+            min={field.ui.minimum ?? 0}
+            max={field.ui.maximum}
+            step={field.ui.step ?? 1}
+            placeholder="random"
+            value={isRandom ? "" : raw}
+            onChange={event => {
+              if (event.target.value === "") return onChange(field.key, "random_seed");
+              const next = Math.trunc(Number(event.target.value));
+              onChange(field.key, Number.isFinite(next) ? next : "random_seed");
+            }}
+          />
+        </label>
+      );
+    }
+
     if (["int", "float", "slider"].includes(type) && field.ui.display === "slider") {
       return (
         <label className="field range-field" key={field.key}>

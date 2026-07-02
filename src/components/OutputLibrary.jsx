@@ -16,7 +16,7 @@ function OutputRow({ output, selected, onToggle, onDownload, onDelete, onView })
         aria-label={`Xem ${output.name}`}
         disabled={!url}
       >
-        <img src={url} alt={output.name} />
+        {url ? <img src={url} alt={output.name} /> : null}
       </button>
       <div className="output-meta">
         <strong>{output.name}</strong>
