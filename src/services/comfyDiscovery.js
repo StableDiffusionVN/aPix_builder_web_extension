@@ -186,22 +186,46 @@ const SDVN_LIB_URLS = {
   loras: "https://raw.githubusercontent.com/StableDiffusionVN/SDVN_Comfy_node/refs/heads/main/lora_lib.json"
 };
 const sdvnLibCache = {};
+// Chặn gọi lại GitHub sớm sau khi fetch lỗi (vd 429) — tránh dội bom trong lúc bị rate-limit.
+const SDVN_FAILURE_COOLDOWN_MS = 60 * 1000;
+const sdvnCooldownUntil = {};
+
+async function fetchSdvnFromGithub(type, signal, { retries = 2 } = {}) {
+  const url = SDVN_LIB_URLS[type];
+  if (!url) return [];
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal });
+      if (response.status === 429) {
+        if (attempt < retries) {
+          const retryAfterSec = Number(response.headers.get("retry-after")) || 2 ** attempt;
+          await new Promise(resolve => setTimeout(resolve, retryAfterSec * 1000));
+          continue;
+        }
+        return null;
+      }
+      if (!response.ok) return null;
+      const obj = await response.json();
+      return uniqueStrings(Object.keys(obj || {}));
+    } catch {
+      if (attempt < retries) continue;
+      return null;
+    }
+  }
+  return null;
+}
 
 /** Tên model/lora trong thư viện SDVN (key của JSON). type: "checkpoints" | "loras". */
 export async function fetchSdvnLibraryNames(type, signal) {
   if (sdvnLibCache[type]) return sdvnLibCache[type];
-  const url = SDVN_LIB_URLS[type];
-  if (!url) return [];
-  try {
-    const response = await fetch(url, { signal });
-    if (!response.ok) return [];
-    const obj = await response.json();
-    const names = uniqueStrings(Object.keys(obj || {}));
-    sdvnLibCache[type] = names;
-    return names;
-  } catch {
+  if (sdvnCooldownUntil[type] > Date.now()) return [];
+  const names = await fetchSdvnFromGithub(type, signal);
+  if (names === null) {
+    sdvnCooldownUntil[type] = Date.now() + SDVN_FAILURE_COOLDOWN_MS;
     return [];
   }
+  sdvnLibCache[type] = names;
+  return names;
 }
 
 /** Dynamic type (checkpoints/loras) có node class_type chứa "SDVN" trong workflow JSON. */
