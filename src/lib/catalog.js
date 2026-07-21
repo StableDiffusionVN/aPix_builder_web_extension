@@ -151,7 +151,14 @@ function fieldDefault(field, kind) {
     const choices = fieldChoices(field);
     if (choices.length) return resolveModelFieldValue(field, choices);
   }
-  return field.ui.value ?? (field.ui.type === "seed" ? "random_seed" : "");
+  // Đồng bộ defaultValue của app chính (src/lib/template.js): boolean → false thay vì "",
+  // number không khai value → minimum/0, json → "{}".
+  const type = String(field.ui?.type || "").toLowerCase();
+  if (type === "seed") return "random_seed";
+  if (type === "checkbox" || type === "boolean") return Boolean(field.ui.value);
+  if (["number", "int", "float", "slider"].includes(type)) return field.ui.value ?? field.ui.minimum ?? 0;
+  if (type === "json") return field.ui.value ?? "{}";
+  return field.ui.value ?? "";
 }
 
 export function defaultValues(fields, { kind } = {}) {

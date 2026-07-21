@@ -202,6 +202,23 @@ describe("model field defaults", () => {
     });
   });
 
+  it("defaults boolean/number/json theo app chính (không phải chuỗi rỗng)", () => {
+    const fields = [
+      { key: "flag", ui: { type: "boolean", label: "Flag" } },
+      { key: "flagOn", ui: { type: "boolean", label: "Flag on", value: true } },
+      { key: "steps", ui: { type: "int", label: "Steps", minimum: 4 } },
+      { key: "cfg", ui: { type: "float", label: "CFG" } },
+      { key: "extra", ui: { type: "json", label: "Extra" } }
+    ];
+    expect(defaultValues(fields)).toEqual({
+      flag: false,
+      flagOn: true,
+      steps: 4,
+      cfg: 0,
+      extra: "{}"
+    });
+  });
+
   it("falls back to first model when default is missing", () => {
     const field = {
       key: "lora",
