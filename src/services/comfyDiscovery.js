@@ -228,9 +228,10 @@ export async function fetchSdvnLibraryNames(type, signal) {
   return names;
 }
 
-/** Dynamic type (checkpoints/loras) có node class_type chứa "SDVN" trong workflow JSON. */
-export function sdvnAugmentTypes(fields, workflowJson) {
-  const out = new Set();
+/** TỪNG FIELD checkpoints/loras có node class_type chứa "SDVN" trong workflow JSON
+ * → { [field.key]: "checkpoints" | "loras" } (per-field — đồng bộ app chính/iOS/Android). */
+export function sdvnAugmentFields(fields, workflowJson) {
+  const out = {};
   if (!workflowJson || typeof workflowJson !== "object") return out;
   for (const field of fields || []) {
     // CHỈ theo ui.type khai báo (loras/checkpoints), KHÔNG suy từ id widget → menu/menu-sub không dính.
@@ -238,22 +239,28 @@ export function sdvnAugmentTypes(fields, workflowJson) {
     if (kind !== "checkpoints" && kind !== "loras") continue;
     const nodeId = String(field?.id ?? "").split("-")[0];
     const classType = nodeId ? workflowJson?.[nodeId]?.class_type : null;
-    if (nodeId && typeof classType === "string" && /sdvn/i.test(classType)) out.add(kind);
+    if (nodeId && field?.key && typeof classType === "string" && /sdvn/i.test(classType)) out[field.key] = kind;
   }
   return out;
 }
 
-/** Gộp danh sách model SDVN vào discovery cho các type có node loader SDVN
- * ("None" đầu tiên, danh sách server trước, SDVN sau — giống app chính). */
+/** Gắn danh sách model SDVN theo TỪNG FIELD vào discovery.sdvnExtras = { [field.key]: names }.
+ * KHÔNG đụng dynamicChoices dùng chung: field trỏ node loader thường không được thấy model SDVN
+ * (chọn sẽ fail khi chạy vì chỉ node SDVN tự tải model theo tên). */
 export async function augmentDiscoveryWithSdvn(discovery, fields, workflowJson, signal) {
-  const types = sdvnAugmentTypes(fields, workflowJson);
-  if (!types.size) return discovery;
-  const dynamicChoices = { ...(discovery?.dynamicChoices || {}) };
-  for (const type of types) {
-    const extra = await fetchSdvnLibraryNames(type, signal);
-    if (extra.length) dynamicChoices[type] = uniqueStrings(["None", ...(dynamicChoices[type] || []), ...extra]);
+  const fieldMap = sdvnAugmentFields(fields, workflowJson);
+  const entries = Object.entries(fieldMap);
+  if (!entries.length) return discovery;
+  const namesByType = {};
+  for (const type of new Set(entries.map(([, type]) => type))) {
+    namesByType[type] = await fetchSdvnLibraryNames(type, signal);
   }
-  return { ...discovery, dynamicChoices, modelLists: dynamicChoices };
+  const sdvnExtras = {};
+  for (const [fieldKey, type] of entries) {
+    if (namesByType[type]?.length) sdvnExtras[fieldKey] = namesByType[type];
+  }
+  if (!Object.keys(sdvnExtras).length) return discovery;
+  return { ...discovery, sdvnExtras };
 }
 
 export function enrichFieldsWithDiscovery(fields, discovery, workflowJson = null) {
@@ -263,7 +270,11 @@ export function enrichFieldsWithDiscovery(fields, discovery, workflowJson = null
     const dynamicKind = resolveDynamicFieldType(field, nodeClass);
     if (!dynamicKind) return field;
     const serverChoices = dynamicFieldChoices(discovery, dynamicKind);
-    const choices = serverChoices.length ? serverChoices : (field.ui.choices || []);
+    // Per-field SDVN: chỉ field có thư viện riêng mới thấy "None" + model SDVN.
+    const extras = discovery?.sdvnExtras?.[field.key] || [];
+    const choices = extras.length
+      ? uniqueStrings(["None", ...serverChoices, ...extras])
+      : (serverChoices.length ? serverChoices : (field.ui.choices || []));
     return {
       ...field,
       ui: {

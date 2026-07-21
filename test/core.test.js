@@ -4,7 +4,7 @@ import { extensionForType, fileStem, formatBytes } from "../src/lib/images";
 import { configFieldsToNodes } from "../src/services/runningHub";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../src/lib/comfyTarget";
 import { collectComfyOutputImages } from "../src/services/comfy";
-import { augmentDiscoveryWithSdvn, enrichFieldsWithDiscovery, sdvnAugmentTypes } from "../src/services/comfyDiscovery";
+import { augmentDiscoveryWithSdvn, enrichFieldsWithDiscovery, sdvnAugmentFields } from "../src/services/comfyDiscovery";
 import { activeSubFields, defaultValues, expandActiveFields, flattenConfigInputs, isModelChoiceField, resolveModelFieldValue } from "../src/lib/catalog";
 import { resolveDynamicFieldType } from "../src/lib/dynamicTypes";
 import { choiceOptionsFromField } from "../src/lib/menuChoices";
@@ -503,11 +503,13 @@ describe("import template .zip", () => {
   });
 });
 
-describe("SDVN model augmentation", () => {
-  it("chỉ thêm cho field type loras/checkpoints, bỏ qua menu dù node SDVN", () => {
+describe("SDVN model augmentation (per-field)", () => {
+  it("chỉ field type loras/checkpoints trỏ node SDVN vào map; menu + node thường bị loại", () => {
     const fields = [
       { key: "ckpt", id: "53-ckpt_name", ui: { type: "checkpoints" } },
       { key: "lora", id: "54-lora_name", ui: { type: "loras" } },
+      // Node loader thường → KHÔNG vào map dù cùng type.
+      { key: "loraPlain", id: "56-lora_name", ui: { type: "loras" } },
       // type menu (dù id lora_name + node SDVN) → KHÔNG được thêm danh sách.
       { key: "loraMenu", id: "55-lora_name", ui: { type: "menu", choices: ["a"] } },
       { key: "vae", id: "10-vae_name", ui: { type: "vae" } }
@@ -516,34 +518,48 @@ describe("SDVN model augmentation", () => {
       "53": { class_type: "SDVN Load Checkpoint" },
       "54": { class_type: "SDVN Load Lora" },
       "55": { class_type: "SDVN Load Lora" },
+      "56": { class_type: "LoraLoader" },
       "10": { class_type: "VAELoader" }
     };
-    expect([...sdvnAugmentTypes(fields, workflow)].sort()).toEqual(["checkpoints", "loras"]);
+    expect(sdvnAugmentFields(fields, workflow)).toEqual({ ckpt: "checkpoints", lora: "loras" });
   });
 
   it("không bơm khi node không phải SDVN", () => {
     const fields = [{ key: "ckpt", id: "1-ckpt_name", ui: { type: "checkpoints" } }];
     const workflow = { "1": { class_type: "CheckpointLoaderSimple" } };
-    expect(sdvnAugmentTypes(fields, workflow).size).toBe(0);
+    expect(sdvnAugmentFields(fields, workflow)).toEqual({});
   });
 
-  it("bơm thư viện SDVN với 'None' đầu danh sách, server trước, SDVN sau", async () => {
+  it("bơm thư viện SDVN CHỈ vào field trỏ node SDVN: 'None' đầu, server trước, SDVN sau", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
       ok: true,
       json: async () => ({ "Sdvn-A.safetensors": {}, "Sdvn-B.safetensors": {} })
     });
     try {
-      const fields = [{ key: "ckpt", id: "3-Ckpt_name", ui: { type: "checkpoints" } }];
-      const workflow = { "3": { class_type: "SDVN Load Checkpoint" } };
+      const fields = [
+        { key: "ckpt", id: "3-Ckpt_name", ui: { type: "checkpoints" } },
+        { key: "ckptPlain", id: "4-ckpt_name", ui: { type: "checkpoints" } }
+      ];
+      const workflow = {
+        "3": { class_type: "SDVN Load Checkpoint" },
+        "4": { class_type: "CheckpointLoaderSimple" }
+      };
       const discovery = { dynamicChoices: { checkpoints: ["Server-1.safetensors"] } };
       const augmented = await augmentDiscoveryWithSdvn(discovery, fields, workflow);
-      expect(augmented.dynamicChoices.checkpoints).toEqual([
+      // dynamicChoices dùng chung KHÔNG bị bơm — chỉ sdvnExtras per-field.
+      expect(augmented.dynamicChoices.checkpoints).toEqual(["Server-1.safetensors"]);
+      expect(augmented.sdvnExtras).toEqual({ ckpt: ["Sdvn-A.safetensors", "Sdvn-B.safetensors"] });
+
+      const enriched = enrichFieldsWithDiscovery(fields, augmented, workflow);
+      expect(enriched[0].ui.choices).toEqual([
         "None",
         "Server-1.safetensors",
         "Sdvn-A.safetensors",
         "Sdvn-B.safetensors"
       ]);
+      // Field trỏ node loader thường: danh sách server sạch, không None/SDVN.
+      expect(enriched[1].ui.choices).toEqual(["Server-1.safetensors"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
