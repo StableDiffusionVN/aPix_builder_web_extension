@@ -256,9 +256,11 @@ export async function augmentDiscoveryWithSdvn(discovery, fields, workflowJson, 
   return { ...discovery, dynamicChoices, modelLists: dynamicChoices };
 }
 
-export function enrichFieldsWithDiscovery(fields, discovery) {
+export function enrichFieldsWithDiscovery(fields, discovery, workflowJson = null) {
   return fields.map(field => {
-    const dynamicKind = resolveDynamicFieldType(field);
+    const nodeId = String(field?.id || "").split("-")[0];
+    const nodeClass = nodeId ? workflowJson?.[nodeId]?.class_type || "" : "";
+    const dynamicKind = resolveDynamicFieldType(field, nodeClass);
     if (!dynamicKind) return field;
     const serverChoices = dynamicFieldChoices(discovery, dynamicKind);
     const choices = serverChoices.length ? serverChoices : (field.ui.choices || []);

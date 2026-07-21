@@ -21,12 +21,14 @@ export const DYNAMIC_FIELD_REGISTRY = {
     label: "controlnets",
     aliases: ["controlnet", "control_net"],
     fields: ["control_net_name", "model_name"],
+    nodeClasses: ["ControlNetLoader", "DiffControlNetLoader"],
     modelFolder: "controlnet"
   },
   upscale_models: {
     label: "upscale_models",
     aliases: ["upscale_model", "upscalers"],
     fields: ["model_name"],
+    nodeClasses: ["UpscaleModelLoader"],
     modelFolder: "upscale_models"
   },
   samplers: {
@@ -60,12 +62,14 @@ export const DYNAMIC_FIELD_REGISTRY = {
     label: "clip",
     aliases: ["clips", "text_encoders", "text_encoder"],
     fields: ["clip_name"],
+    nodeClasses: ["CLIPLoader", "DualCLIPLoader"],
     modelFolder: "text_encoders"
   },
   clip_vision: {
     label: "clip_vision",
     aliases: ["clipvision", "clip_visions"],
     fields: ["clip_name"],
+    nodeClasses: ["CLIPVisionLoader"],
     modelFolder: "clip_vision"
   }
 };
@@ -99,6 +103,22 @@ export function inferDynamicTypeFromFieldId(id) {
   return "";
 }
 
+/** Khớp CHÍNH XÁC cặp tên widget + class node (đồng bộ src/lib/dynamicTypes.js app chính) —
+ * phân biệt được model_name của ControlNetLoader vs UpscaleModelLoader, clip_name của CLIPLoader vs CLIPVisionLoader. */
+export function inferDynamicTypeFromField(field, nodeClass = "") {
+  const normalizedField = String(field || "").toLowerCase();
+  const normalizedNode = String(nodeClass || "").toLowerCase();
+  for (const [type, config] of Object.entries(DYNAMIC_FIELD_REGISTRY)) {
+    const matchesField = (config.fields || []).some(item => item.toLowerCase() === normalizedField);
+    if (!matchesField) continue;
+    const nodeClasses = config.nodeClasses || [];
+    if (!nodeClasses.length || nodeClasses.some(item => item.toLowerCase() === normalizedNode)) {
+      return type;
+    }
+  }
+  return "";
+}
+
 const STATIC_FIELD_TYPES = new Set([
   "string",
   "text",
@@ -116,13 +136,20 @@ const STATIC_FIELD_TYPES = new Set([
 
 const CHOICE_FIELD_TYPES = new Set(["menu", "menu-sub", "dropdown"]);
 
-export function resolveDynamicFieldType(field) {
+export function resolveDynamicFieldType(field, nodeClass = "") {
   const explicitType = String(field?.ui?.type || "").trim().toLowerCase();
   const canonical = canonicalDynamicType(explicitType);
   if (canonical) return canonical;
   if (STATIC_FIELD_TYPES.has(explicitType)) return "";
-  if (CHOICE_FIELD_TYPES.has(explicitType)) return inferDynamicTypeFromFieldId(field?.id);
-  if (!explicitType) return inferDynamicTypeFromFieldId(field?.id);
+  if (CHOICE_FIELD_TYPES.has(explicitType) || !explicitType) {
+    if (nodeClass) {
+      const widgetName = String(field?.id || "").split("-").pop();
+      const inferred = inferDynamicTypeFromField(widgetName, nodeClass);
+      // Chỉ nhận type cần node để phân biệt (model_name/clip_name) — các field khác giữ hành vi substring cũ.
+      if (inferred && DYNAMIC_FIELD_REGISTRY[inferred]?.nodeClasses?.length) return inferred;
+    }
+    return inferDynamicTypeFromFieldId(field?.id);
+  }
   return "";
 }
 

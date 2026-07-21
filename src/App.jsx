@@ -294,7 +294,7 @@ export default function App() {
               }
             }
             discovery = await augmentDiscoveryWithSdvn(discovery, nextFields, workflowJson);
-            nextFields = enrichFieldsWithDiscovery(nextFields, discovery);
+            nextFields = enrichFieldsWithDiscovery(nextFields, discovery, workflowJson);
           }
           if (!cancelled) {
             setConfig(nextConfig);

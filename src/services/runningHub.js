@@ -82,8 +82,14 @@ function delay(ms, signal) {
   });
 }
 
+// RunningHub trả code khi là number khi là string (server app chính so sánh cả hai kiểu) —
+// so sánh khoan dung để task fail (805) không bị poll đến timeout.
+function rhCodeEquals(code, value) {
+  return code === value || code === String(value);
+}
+
 function isRhTaskSuccessCode(code) {
-  return code === 0 || code === "0";
+  return rhCodeEquals(code, 0);
 }
 
 function normalizeRhOutputList(data) {
@@ -158,7 +164,7 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
 
     onStatus?.("Kiểm tra lại trạng thái task…");
     const refreshed = await queryTaskOutputs(apiKey, taskId, signal);
-    if (refreshed.code === 805) throw new Error(rhTaskFailureMessage(refreshed));
+    if (rhCodeEquals(refreshed.code, 805)) throw new Error(rhTaskFailureMessage(refreshed));
     if (!isRhTaskSuccessCode(refreshed.code)) {
       throw new Error(downloadError?.message || "Không tải được output");
     }
@@ -179,7 +185,7 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
   if (results.length) return results;
 
   const final = await queryTaskOutputs(apiKey, taskId, signal);
-  if (final.code === 805) throw new Error(rhTaskFailureMessage(final));
+  if (rhCodeEquals(final.code, 805)) throw new Error(rhTaskFailureMessage(final));
   if (isRhTaskSuccessCode(final.code) && normalizeRhOutputList(final.data).some(item => outputUrl(item))) {
     throw new Error("Không tải được output sau nhiều lần thử");
   }
@@ -362,11 +368,11 @@ async function pollOutputs(apiKey, taskId, signal, onStatus) {
         return downloadRhOutputs(apiKey, taskId, list, signal, onStatus);
       }
     }
-    if (payload.code === 805) throw new Error(rhTaskFailureMessage(payload));
+    if (rhCodeEquals(payload.code, 805)) throw new Error(rhTaskFailureMessage(payload));
 
-    if (payload.code === 804) {
+    if (rhCodeEquals(payload.code, 804)) {
       onStatus?.("RunningHub đang xử lý…");
-    } else if (payload.code === 813) {
+    } else if (rhCodeEquals(payload.code, 813)) {
       onStatus?.("Đang chờ hàng đợi RunningHub…");
     } else {
       onStatus?.("RunningHub đang xử lý…");
