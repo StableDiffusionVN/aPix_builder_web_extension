@@ -146,7 +146,9 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
       <h2 id="configure-title">Thiết lập</h2>
       {(loading || (remoteModelDiscovery && discoveryLoading)) && (
         <div className="inline-status">
-          {loading ? "Đang tải trường dữ liệu từ RunningHub…" : "Đang quét checkpoint/LoRA từ ComfyUI…"}
+          {loading
+            ? (workflowKind === "comfy" ? "Đang tải trường dữ liệu…" : "Đang tải trường dữ liệu từ RunningHub…")
+            : "Đang quét checkpoint/LoRA từ ComfyUI…"}
         </div>
       )}
       <div className="field-stack">

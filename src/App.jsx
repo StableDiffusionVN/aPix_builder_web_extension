@@ -278,28 +278,53 @@ export default function App() {
           }
         } else {
           const nextConfig = await loadTemplateConfig(selected);
-          let nextFields = flattenConfigInputs(nextConfig);
+          const baseFields = flattenConfigInputs(nextConfig);
+          if (cancelled) return;
+          // Render form NGAY với field từ YAML — không chặn UI chờ quét model/thư viện SDVN.
+          setConfig(nextConfig);
+          setFields(baseFields);
+          setValues(defaultValues(baseFields, { kind: selected.kind }));
+          setLoadingFields(false);
           if (selected.kind === "comfy") {
-            // Workflow JSON để dò node loader SDVN (bơm thêm model/lora kể cả khi không có server).
-            const workflowJson = await loadComfyWorkflow(selected);
-            let discovery = { dynamicChoices: {}, modelLists: {} };
-            if (settings.comfyUrl) {
-              if (!cancelled) setDiscoveryLoading(true);
-              try {
-                discovery = await getComfyDiscovery(settings.comfyUrl);
-              } catch (discoveryError) {
-                if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
-              } finally {
-                if (!cancelled) setDiscoveryLoading(false);
+            // Quét model + thư viện SDVN chạy NỀN, xong mới enrich lại field (dropdown
+            // hiện spinner qua discoveryLoading trong lúc chờ).
+            setDiscoveryLoading(true);
+            try {
+              // Workflow JSON để dò node loader SDVN (bơm thêm model/lora kể cả khi không có server).
+              const workflowJson = await loadComfyWorkflow(selected);
+              let discovery = { dynamicChoices: {}, modelLists: {} };
+              if (settings.comfyUrl) {
+                try {
+                  discovery = await getComfyDiscovery(settings.comfyUrl);
+                } catch (discoveryError) {
+                  if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
+                }
               }
+              discovery = await augmentDiscoveryWithSdvn(discovery, baseFields, workflowJson);
+              const enriched = enrichFieldsWithDiscovery(baseFields, discovery, workflowJson);
+              if (!cancelled) {
+                setFields(enriched);
+                // Giữ giá trị user đã chỉnh trong lúc chờ; chỉ điền default cho ô trống
+                // và thay giá trị không còn nằm trong danh sách model mới.
+                setValues(current => {
+                  const defaults = defaultValues(enriched, { kind: selected.kind });
+                  const next = { ...current };
+                  for (const [key, value] of Object.entries(defaults)) {
+                    if (next[key] == null || next[key] === "") next[key] = value;
+                  }
+                  for (const field of enriched) {
+                    if (!field.ui?.dynamic) continue;
+                    const choices = (field.ui.choices || []).map(String);
+                    if (choices.length && !choices.includes(String(next[field.key] ?? ""))) {
+                      next[field.key] = defaults[field.key];
+                    }
+                  }
+                  return next;
+                });
+              }
+            } finally {
+              if (!cancelled) setDiscoveryLoading(false);
             }
-            discovery = await augmentDiscoveryWithSdvn(discovery, nextFields, workflowJson);
-            nextFields = enrichFieldsWithDiscovery(nextFields, discovery, workflowJson);
-          }
-          if (!cancelled) {
-            setConfig(nextConfig);
-            setFields(nextFields);
-            setValues(defaultValues(nextFields, { kind: selected.kind }));
           }
         }
       } catch (nextError) {
