@@ -347,7 +347,7 @@ async function pollOutputs(apiKey, taskId, signal, onStatus) {
   const startedAt = Date.now();
   let pollErrors = 0;
 
-  while (Date.now() - startedAt < 10 * 60 * 1000) {
+  while (Date.now() - startedAt < 20 * 60 * 1000) {
     let payload;
     try {
       payload = await queryTaskOutputs(apiKey, taskId, signal);
