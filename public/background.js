@@ -70,8 +70,11 @@ chrome.runtime.onStartup?.addListener(() => {
 });
 
 // Panel nhắc cài lại rule header (thư viện RunningHub cần Origin để trả tên tiếng Anh).
-chrome.runtime.onMessage.addListener(message => {
-  if (message?.type === "apix-ensure-header-rules") ensureImageHeaderRules();
+// Trả lời SAU KHI rule đã cài xong để panel await được trước lần fetch đầu.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "apix-ensure-header-rules") return undefined;
+  ensureImageHeaderRules().finally(() => sendResponse({ ok: true }));
+  return true;
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {

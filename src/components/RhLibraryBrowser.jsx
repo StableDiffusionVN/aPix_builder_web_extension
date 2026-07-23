@@ -140,7 +140,7 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
               type="button"
               className={`rh-library-card${selected?.id === record.id ? " is-selected" : ""}`}
               onClick={() => setSelected(current => (current?.id === record.id ? null : record))}
-              title={record.name}
+              title={record.originalName || record.name}
             >
               <span className="rh-library-cover">
                 {record.coverUrl

@@ -22,6 +22,11 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "apix-rh-origin", "enabled": true, "path": "dnr-rules.json" }
+    ]
+  },
   "action": {
     "default_title": "Open aPix Builder",
     "default_icon": "icons/icon-48.png"

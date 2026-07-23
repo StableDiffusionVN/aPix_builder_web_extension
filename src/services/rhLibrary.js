@@ -36,12 +36,60 @@ export function categoryName(tagId, lang, fallback = "") {
   return entry[lang] || entry.vi || fallback;
 }
 
-// Rule DNR set Origin (tên app tiếng Anh) cài ở background — nhắc cài lại mỗi lần mở thư viện
-// (phòng trường hợp onInstalled chưa chạy sau khi update extension).
+// Header Origin (quyết định tên tiếng Anh) do STATIC rule trong dnr-rules.json set — luôn
+// hoạt động ngay khi extension load. sendMessage chỉ là belt-and-braces cài thêm dynamic rule;
+// await ack để lần fetch đầu không chạy trước khi rule sẵn sàng.
+let headerRulesReady = null;
 export function ensureLibraryHeaderRules() {
-  try {
-    chrome?.runtime?.sendMessage?.({ type: "apix-ensure-header-rules" });
-  } catch { /* dev preview ngoài extension không có chrome.runtime */ }
+  if (!headerRulesReady) {
+    headerRulesReady = (async () => {
+      try {
+        await chrome?.runtime?.sendMessage?.({ type: "apix-ensure-header-rules" });
+      } catch { /* dev preview ngoài extension không có chrome.runtime */ }
+    })();
+  }
+  return headerRulesReady;
+}
+
+// Một số app tác giả không có bản dịch — tên vẫn tiếng Trung kể cả khi gửi Origin.
+// Từ điển cụm từ phổ biến trên RunningHub → thay thế bằng tiếng Anh (theo yêu cầu),
+// giữ nguyên phần không nhận diện được; tên gốc vẫn hiện ở tooltip.
+const CJK_RE = /[㐀-鿿぀-ヿ]/;
+const CJK_PHRASES = [
+  ["图生视频", "Image-to-Video"], ["文生视频", "Text-to-Video"], ["图生图", "Image-to-Image"],
+  ["文生图", "Text-to-Image"], ["图生文", "Image-to-Text"], ["一键换装", "One-click outfit swap"],
+  ["一键换脸", "One-click face swap"], ["换脸", "face swap"], ["换装", "outfit swap"],
+  ["换衣", "outfit change"], ["一句话", "one-sentence"], ["一键", "one-click"],
+  ["动作迁移", "motion transfer"], ["自动尺寸", "auto size"], ["高清修复", "HD restore"],
+  ["高清", "HD"], ["修复", "restore"], ["放大", "upscale"], ["全能图片", "All-in-One Image"],
+  ["全能", "all-in-one"], ["低价渠道版", "budget edition"], ["低价", "budget"],
+  ["官方稳定版", "official stable"], ["官方", "official"], ["稳定", "stable"], ["渠道", "channel"],
+  ["自定义提示词", "custom prompt"], ["提示词", "prompt"], ["多图", "multi-image"],
+  ["单图", "single-image"], ["编辑流", "editing workflow"], ["编辑", "edit"],
+  ["视频", "video"], ["图片", "image"], ["图像", "image"], ["照片", "photo"],
+  ["写真", "portrait"], ["人像", "portrait"], ["真人", "realistic"], ["自用", "personal"],
+  ["超强", "super"], ["极佳", "excellent"], ["塑型", "shaping"], ["角色替换", "character swap"],
+  ["角色", "character"], ["风格转换", "style transfer"], ["风格", "style"], ["动漫", "anime"],
+  ["模特", "model"], ["电商", "e-commerce"], ["海报", "poster"], ["直出", "direct output"],
+  ["加密", "encrypted"], ["皮肤质感增强", "skin texture enhance"], ["质感", "texture"],
+  ["皮肤", "skin"], ["细节", "detail"], ["增强", "enhance"], ["真实感", "realism"],
+  ["增加", "add"], ["世界杯", "World Cup"], ["女装", "women's wear"], ["成片", "final image"],
+  ["拼贴", "collage"], ["自由版", "free edition"], ["清凉", ""], ["版", "edition"],
+  ["新", "new"], ["流", "workflow"], ["单", "single"], ["多", "multi"],
+  ["【", " ["], ["】", "] "], ["（", " ("], ["）", ") "], ["、", ", "], ["，", ", "], ["！", "! "], ["：", ": "]
+];
+
+/** Dịch thay thế tên còn tiếng Trung bằng cụm từ tiếng Anh phổ biến; trả nguyên bản nếu không có CJK. */
+export function translateCjkName(name = "") {
+  if (!CJK_RE.test(name)) return name;
+  let result = name;
+  // Đệm khoảng trắng quanh bản dịch để các cụm liền nhau không dính chữ.
+  for (const [zh, en] of CJK_PHRASES) result = result.split(zh).join(en ? ` ${en} ` : " ");
+  return result
+    .replace(/\s+([,.!:)\]])/g, "$1")
+    .replace(/([([])\s+/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim() || name;
 }
 
 async function post(pathname, body, signal) {
@@ -59,6 +107,7 @@ async function post(pathname, body, signal) {
 }
 
 export async function fetchRhLibraryTags(signal) {
+  await ensureLibraryHeaderRules();
   const raw = await post("/api/portal/tag/tree", { rang: "WEBAPP" }, signal);
   return (Array.isArray(raw) ? raw : [])
     .filter(tag => tag?.id)
@@ -77,9 +126,11 @@ function normalizeRecord(record) {
   const cover = record.preview || record.covers?.[0] || null;
   const coverUrl = cover?.url || "";
   const stats = record.statisticsInfo || {};
+  const rawName = record.name || String(record.id);
   return {
     id: String(record.id),
-    name: record.name || String(record.id),
+    name: translateCjkName(rawName),
+    originalName: rawName,
     coverUrl: /\.(mp4|webm|mov)(\?|$)/i.test(coverUrl) ? "" : (cover?.thumbnailUri || coverUrl),
     coverIsVideo: /\.(mp4|webm|mov)(\?|$)/i.test(coverUrl),
     useCount: Number(stats.useCount) || 0,
@@ -89,6 +140,7 @@ function normalizeRecord(record) {
 }
 
 export async function fetchRhLibraryList({ tags = [], search = "", sort = "RECOMMEND", page = 1, size = 30 } = {}, signal) {
+  await ensureLibraryHeaderRules();
   const body = { current: Math.max(1, page), size, tags, sort };
   const keyword = String(search || "").trim();
   if (keyword) body.search = keyword;
