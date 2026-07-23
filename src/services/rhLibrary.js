@@ -4,6 +4,39 @@
 
 const BASE_URL = "https://www.runninghub.ai";
 
+// Tên danh mục theo ID tag (ổn định) — hiển thị tiếng Việt bất kể API trả en/zh.
+export const CATEGORY_NAMES_VI = {
+  "1671123934319734000": "Nhân vật ảo",
+  "1671123934319734090": "Tạo ảnh",
+  "1671123934319734091": "Tạo video",
+  "1671123934319734093": "Hiệu ứng video",
+  "1671123934319734094": "Anime",
+  "1871151815242543118": "Chuyển phong cách",
+  "1871151815242543119": "Poster",
+  "1671123934319734092": "Tạo âm thanh",
+  "1871151815242543115": "Chỉnh sửa ảnh",
+  "1871151815242543107": "Nhiếp ảnh",
+  "1871151815242543108": "Phim & Game",
+  "1671123934319734095": "Mô hình 3D",
+  "1871151815242543109": "Sáng tạo",
+  "1871151815242543110": "Thiết kế đồ họa",
+  "1871151815242543111": "Thương mại điện tử",
+  "1871151815242543112": "Thiết kế không gian",
+  "1871151815242543113": "Nghệ thuật cách điệu",
+  "1871151815242543114": "API",
+  "1875941016195789655": "Truyện tranh động AI",
+  "1871151815242543116": "Dựng video",
+  "1871151815242543117": "Khác"
+};
+
+// Rule DNR set Origin (tên app tiếng Anh) cài ở background — nhắc cài lại mỗi lần mở thư viện
+// (phòng trường hợp onInstalled chưa chạy sau khi update extension).
+export function ensureLibraryHeaderRules() {
+  try {
+    chrome?.runtime?.sendMessage?.({ type: "apix-ensure-header-rules" });
+  } catch { /* dev preview ngoài extension không có chrome.runtime */ }
+}
+
 async function post(pathname, body, signal) {
   const response = await fetch(`${BASE_URL}${pathname}`, {
     method: "POST",

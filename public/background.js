@@ -69,6 +69,11 @@ chrome.runtime.onStartup?.addListener(() => {
   ensureImageHeaderRules();
 });
 
+// Panel nhắc cài lại rule header (thư viện RunningHub cần Origin để trả tên tiếng Anh).
+chrome.runtime.onMessage.addListener(message => {
+  if (message?.type === "apix-ensure-header-rules") ensureImageHeaderRules();
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_IMPORT_RUN_ID || !info.srcUrl || !tab?.windowId) return;
 

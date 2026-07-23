@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownToLine, ExternalLink, Heart, LoaderCircle, Play, Search, X } from "lucide-react";
-import { fetchRhLibraryList, fetchRhLibraryTags } from "../services/rhLibrary";
+import { CATEGORY_NAMES_VI, ensureLibraryHeaderRules, fetchRhLibraryList, fetchRhLibraryTags } from "../services/rhLibrary";
 
 const SORTS = [
   { id: "RECOMMEND", label: "Đề xuất" },
@@ -45,7 +45,9 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
   }, [open, searchInput]);
 
   useEffect(() => {
-    if (!open || tags.length) return;
+    if (!open) return;
+    ensureLibraryHeaderRules();
+    if (tags.length) return;
     fetchRhLibraryTags().then(setTags).catch(() => {});
   }, [open, tags.length]);
 
@@ -112,7 +114,7 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
           </div>
           <select value={categoryId} onChange={event => setCategoryId(event.target.value)} aria-label="Danh mục">
             <option value="">Tất cả danh mục</option>
-            {tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+            {tags.map(tag => <option key={tag.id} value={tag.id}>{CATEGORY_NAMES_VI[tag.id] || tag.name}</option>)}
           </select>
           <select value={sort} onChange={event => setSort(event.target.value)} aria-label="Sắp xếp">
             {SORTS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}

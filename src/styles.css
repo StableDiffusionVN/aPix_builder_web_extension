@@ -470,7 +470,9 @@ video.image-lightbox-image {
   width: min(420px, 88vw);
 }
 
-/* ── Thư viện RunningHub (browse/import) ──────────────── */
+/* ── Thư viện RunningHub (browse/import) — theme sáng/tối theo biến hệ thống ── */
+
+.custom-app-row.has-library { grid-template-columns: minmax(0, 1fr) auto auto; }
 
 .rh-library-overlay {
   position: fixed;
@@ -479,17 +481,19 @@ video.image-lightbox-image {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  background: rgba(9, 11, 15, 0.6);
+  background: var(--backdrop);
 }
 
 .rh-library-panel {
   display: flex;
   flex-direction: column;
   width: 100%;
+  max-width: 860px;
   margin: 12px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--panel, #16181d);
+  background: var(--surface);
+  color: var(--text);
   overflow: hidden;
 }
 
@@ -498,7 +502,7 @@ video.image-lightbox-image {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid var(--line);
 }
 
 .rh-library-header h2 {
@@ -517,8 +521,12 @@ video.image-lightbox-image {
 .rh-library-filters select {
   flex: 1 1 40%;
   min-width: 0;
-  padding: 6px 8px;
-  border-radius: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control);
+  color: var(--text);
 }
 
 .rh-library-search {
@@ -527,16 +535,19 @@ video.image-lightbox-image {
   gap: 6px;
   flex: 1 1 100%;
   padding: 0 9px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--control);
+  color: var(--muted);
 }
 
 .rh-library-search input {
   flex: 1;
-  padding: 7px 0;
+  min-width: 0;
+  padding: 8px 0;
   border: none;
   background: transparent;
-  color: inherit;
+  color: var(--text);
   font-size: 12.5px;
   outline: none;
 }
@@ -544,7 +555,7 @@ video.image-lightbox-image {
 .rh-library-count {
   padding: 6px 12px 4px;
   font-size: 11px;
-  opacity: 0.6;
+  color: var(--muted);
 }
 
 .rh-library-grid {
@@ -553,6 +564,8 @@ video.image-lightbox-image {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  /* max-content: hàng cao theo nội dung thật — mặc định auto bóp card vì padding/aspect % không tính vào intrinsic size */
+  grid-auto-rows: max-content;
   gap: 8px;
   align-content: start;
   padding: 4px 12px 12px;
@@ -562,46 +575,56 @@ video.image-lightbox-image {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  height: auto;
   padding: 0 0 7px;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
-  background: transparent;
-  color: inherit;
+  background: var(--surface-2);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
 .rh-library-card.is-selected {
-  border-color: var(--accent, #58a6ff);
-  box-shadow: 0 0 0 1px var(--accent, #58a6ff);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .rh-library-cover {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
   aspect-ratio: 3 / 4;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-3);
 }
 
-.rh-library-cover img {
+.rh-library-cover img,
+.rh-library-cover svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
+.rh-library-cover svg {
+  padding: 38%;
+  color: var(--faint);
+}
+
 .rh-library-name {
-  padding: 0 8px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 2.6em;
+  max-height: 2.7em;
+  padding: 0 8px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .rh-library-stats {
@@ -609,8 +632,8 @@ video.image-lightbox-image {
   align-items: center;
   gap: 4px;
   padding: 0 8px;
+  color: var(--muted);
   font-size: 10px;
-  opacity: 0.65;
 }
 
 .rh-library-loading {
@@ -618,14 +641,15 @@ video.image-lightbox-image {
   display: flex;
   justify-content: center;
   padding: 10px 0;
+  color: var(--muted);
 }
 
 .rh-library-error {
   grid-column: 1 / -1;
   margin: 24px 0;
   text-align: center;
+  color: var(--muted);
   font-size: 12px;
-  opacity: 0.7;
 }
 
 .rh-library-footer {
@@ -633,27 +657,33 @@ video.image-lightbox-image {
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .rh-library-footer strong {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11.5px;
+}
+
+.rh-library-footer a {
+  display: inline-flex;
+  color: var(--muted);
 }
 
 .rh-library-import {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 8px 12px;
   border: none;
-  border-radius: 8px;
-  background: var(--accent, #58a6ff);
-  color: #fff;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -665,3 +695,4 @@ video.image-lightbox-image {
   gap: 5px;
   white-space: nowrap;
 }
+

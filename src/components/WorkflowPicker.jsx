@@ -63,7 +63,7 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
       {isAppMode && <AppInfoCard info={appInfo} />}
 
       {isAppMode && (
-        <div className="custom-app-row">
+        <div className={`custom-app-row${onOpenLibrary ? " has-library" : ""}`}>
           <input aria-label="Custom RunningHub App ID" inputMode="numeric" value={customAppId} onChange={event => setCustomAppId(event.target.value)} placeholder="Nhập custom App ID" />
           <button onClick={addCustomApp} disabled={!customAppId.trim() || scanningApp}>{scanningApp ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {scanningApp ? "Đang quét" : "Thêm"}</button>
           {onOpenLibrary && (
