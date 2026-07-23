@@ -1,5 +1,6 @@
 import { Lock, Zap } from "lucide-react";
 import { t } from "../lib/i18n";
+import { estimateRhCoins } from "../services/runningHub";
 
 function coverUrl(info) {
   const cover = info?.covers?.[0];
@@ -28,6 +29,13 @@ export function AppInfoCard({ info }) {
           {info.accessEncrypted && <span className="encrypted-label"><Lock size={11} /> Private</span>}
         </div>
         <span className="app-info-id">ID {info.webappId}</span>
+        {Number(info.avgRunningSeconds) > 0 && (
+          <div className="app-info-cost" title={t("appInfo.estTooltip")}>
+            <span>⏱ ~{Math.round(Number(info.avgRunningSeconds))}s</span>
+            {info.runningSuccessRate != null && info.runningSuccessRate !== "" && <span>✅ {info.runningSuccessRate}%</span>}
+            {estimateRhCoins(info.avgRunningSeconds) && <span>🪙 ~{estimateRhCoins(info.avgRunningSeconds)} {t("appInfo.estCoinsUnit")}</span>}
+          </div>
+        )}
         {!!tags.length && <div className="app-info-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
       </div>
     </article>

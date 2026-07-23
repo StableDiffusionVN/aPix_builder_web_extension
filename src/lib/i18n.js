@@ -79,6 +79,8 @@ const messages = {
 
     // AppInfoCard
     "appInfo.plusWarning": "App chạy trên Plus GPU (48GB) — có thể tốn nhiều coin hơn.",
+    "appInfo.estCoinsUnit": "coin/lần",
+    "appInfo.estTooltip": "Ước tính = thời gian chạy trung bình × 0,2 coin/giây (máy thường). Thực tế thay đổi theo tham số; app Plus GPU có thể tốn hơn.",
 
     // Preset
     "preset.exists": "Preset \"{name}\" đã tồn tại",
@@ -321,6 +323,8 @@ const messages = {
 
     // AppInfoCard
     "appInfo.plusWarning": "This app runs on Plus GPU (48GB) — it may cost more coins.",
+    "appInfo.estCoinsUnit": "coins/run",
+    "appInfo.estTooltip": "Estimate = average run time × 0.2 coins/second (standard machine). Actual cost varies with parameters; Plus GPU apps may cost more.",
 
     // Presets
     "preset.exists": "Preset \"{name}\" already exists",

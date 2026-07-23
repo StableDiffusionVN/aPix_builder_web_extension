@@ -723,3 +723,5 @@ video.image-lightbox-image {
   white-space: nowrap;
 }
 
+
+.app-info-cost { display: flex; flex-wrap: wrap; gap: 9px; font-size: 11px; color: var(--muted); }

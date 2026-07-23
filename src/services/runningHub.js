@@ -192,9 +192,17 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
   throw new Error(t("rh.noOutputs"));
 }
 
-// API nội bộ website (không cần key) — lấy instanceType ("plus" = app chạy Plus GPU,
-// API key thường có thể không hỗ trợ). Fail mềm: lỗi → null.
-async function fetchWebappInstanceType(webappId, signal) {
+// Ước tính coin: rate suy từ dữ liệu chạy thật (~0,2 RH coin/giây máy thường).
+export const RH_COINS_PER_SECOND = 0.2;
+export function estimateRhCoins(avgSeconds) {
+  const seconds = Number(avgSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.max(1, Math.round(seconds * RH_COINS_PER_SECOND));
+}
+
+// API nội bộ website (không cần key) — instanceType ("plus" = Plus GPU) + thời gian chạy
+// trung bình/tỉ lệ thành công để dự toán chi phí. Fail mềm: lỗi → null.
+async function fetchWebappDetail(webappId, signal) {
   try {
     const response = await fetch(`${BASE_URL}/api/webapp/detail`, {
       method: "POST",
@@ -204,7 +212,11 @@ async function fetchWebappInstanceType(webappId, signal) {
     });
     const payload = await response.json();
     if (payload.code !== 0 && payload.code !== "0") return null;
-    return payload.data?.instanceType || null;
+    return {
+      instanceType: payload.data?.instanceType || null,
+      avgRunningSeconds: Number(payload.data?.avgRunningSeconds) || null,
+      runningSuccessRate: payload.data?.runningSuccessRate ?? null
+    };
   } catch {
     return null;
   }
@@ -212,12 +224,12 @@ async function fetchWebappInstanceType(webappId, signal) {
 
 export async function getAppDefinition(apiKey, webappId, signal) {
   const query = new URLSearchParams({ apiKey, webappId });
-  const [response, instanceType] = await Promise.all([
+  const [response, detail] = await Promise.all([
     fetch(`${BASE_URL}/api/webapp/apiCallDemo?${query}`, {
       headers: headers(apiKey),
       signal
     }),
-    fetchWebappInstanceType(webappId, signal)
+    fetchWebappDetail(webappId, signal)
   ]);
   const payload = await readEnvelope(response);
   const data = payload.data || {};
@@ -228,7 +240,9 @@ export async function getAppDefinition(apiKey, webappId, signal) {
     statisticsInfo: data.statisticsInfo && typeof data.statisticsInfo === "object" ? data.statisticsInfo : null,
     covers: Array.isArray(data.covers) ? data.covers : [],
     tags: Array.isArray(data.tags) ? data.tags : [],
-    instanceType
+    instanceType: detail?.instanceType || null,
+    avgRunningSeconds: detail?.avgRunningSeconds ?? null,
+    runningSuccessRate: detail?.runningSuccessRate ?? null
   };
   return {
     name: info.webappName,
