@@ -40,11 +40,13 @@ function modeLabelForKind(kind) {
 function nodeToField(node) {
   const type = String(node.fieldType || "STRING").toUpperCase();
   const data = node.fieldData;
-  let choices = Array.isArray(data) ? data : data?.options || data?.values || data?.choices || [];
+  // ComfyUI COMBO trả tuple [[...options], {config}] — lấy mảng con đầu làm danh sách chọn.
+  const unwrapChoices = arr => (Array.isArray(arr[0]) ? arr[0] : arr).filter(item => typeof item !== "object" || item === null);
+  let choices = Array.isArray(data) ? unwrapChoices(data) : data?.options || data?.values || data?.choices || [];
   if (!choices.length && typeof data === "string") {
     try {
       const parsed = JSON.parse(data);
-      choices = Array.isArray(parsed) ? parsed : parsed?.options || parsed?.values || parsed?.choices || [];
+      choices = Array.isArray(parsed) ? unwrapChoices(parsed) : parsed?.options || parsed?.values || parsed?.choices || [];
     } catch { /* RunningHub also uses plain strings for field metadata. */ }
   }
   return {
