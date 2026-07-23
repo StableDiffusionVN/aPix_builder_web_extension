@@ -18,6 +18,7 @@ import { normalizeImageRecord } from "./lib/images";
 import { adjacentPreviewIndex } from "./lib/lightboxNavigation";
 import { clearInput, deleteCustomCatalogItem, deleteOutput, deleteOutputs, listCustomCatalogItems, listOutputs, loadInputs, saveCustomCatalogItem, saveInput, saveOutput } from "./lib/libraryDb";
 import { createCustomRunningHubApp, importTemplateDirectory, importTemplateZip } from "./lib/templateImport";
+import { RhLibraryBrowser } from "./components/RhLibraryBrowser";
 import { usePresets } from "./hooks/usePresets";
 import { laneKeyForKind, laneKeyForMode, useRunnerLane } from "./hooks/useRunnerLane";
 import { interruptComfyWorkflow, runComfyWorkflow, resetComfySession, testComfyConnection } from "./services/comfy";
@@ -77,6 +78,7 @@ export default function App() {
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [importingFolder, setImportingFolder] = useState(false);
   const [scanningApp, setScanningApp] = useState(false);
+  const [rhLibraryOpen, setRhLibraryOpen] = useState(false);
   const comfyLane = useRunnerLane();
   const rhLane = useRunnerLane();
   const lanes = { comfy: comfyLane, rh: rhLane };
@@ -705,6 +707,11 @@ export default function App() {
     return true;
   }
 
+  async function importFromLibrary(record) {
+    const added = await addCustomApp(record.id);
+    if (added !== false) setRhLibraryOpen(false);
+  }
+
   async function removeCustomItem(item) {
     if (!item?.custom) return;
     await deleteCustomCatalogItem(item.id);
@@ -792,6 +799,13 @@ export default function App() {
           onDeleteCustom={removeCustomItem}
           importingFolder={importingFolder}
           scanningApp={scanningApp}
+          onOpenLibrary={() => setRhLibraryOpen(true)}
+        />
+        <RhLibraryBrowser
+          open={rhLibraryOpen}
+          onClose={() => setRhLibraryOpen(false)}
+          onImport={importFromLibrary}
+          importing={scanningApp}
         />
         {mode !== "runninghub-app" ? (
           <PresetBar

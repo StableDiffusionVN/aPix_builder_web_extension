@@ -1,4 +1,4 @@
-import { FileArchive, FolderInput, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { FileArchive, FolderInput, LibraryBig, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { AppInfoCard } from "./AppInfoCard";
 
@@ -8,7 +8,7 @@ const MODE_TITLES = {
   "runninghub-app": "RunningHub App"
 };
 
-export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImportDirectory, onImportZip, onAddCustomApp, onDeleteCustom, importingFolder, scanningApp }) {
+export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImportDirectory, onImportZip, onAddCustomApp, onDeleteCustom, importingFolder, scanningApp, onOpenLibrary }) {
   const [customAppId, setCustomAppId] = useState("");
   const zipInputRef = useRef(null);
   const title = MODE_TITLES[mode];
@@ -66,6 +66,11 @@ export function WorkflowPicker({ mode, items, selected, appInfo, onSelect, onImp
         <div className="custom-app-row">
           <input aria-label="Custom RunningHub App ID" inputMode="numeric" value={customAppId} onChange={event => setCustomAppId(event.target.value)} placeholder="Nhập custom App ID" />
           <button onClick={addCustomApp} disabled={!customAppId.trim() || scanningApp}>{scanningApp ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />} {scanningApp ? "Đang quét" : "Thêm"}</button>
+          {onOpenLibrary && (
+            <button type="button" className="library-open-button" onClick={onOpenLibrary} title="Thư viện app RunningHub">
+              <LibraryBig size={15} /> Thư viện
+            </button>
+          )}
         </div>
       )}
     </section>

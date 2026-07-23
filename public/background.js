@@ -2,7 +2,7 @@ import { buildPendingImport, MENU_IMPORT_RUN_ID } from "./contextMenuModel.js";
 import { buildImportImagePackage } from "./imageImport.js";
 import { filenameFromUrl, stagingRef } from "./imageStaging.js";
 
-const IMAGE_HEADER_RULE_IDS = [101];
+const IMAGE_HEADER_RULE_IDS = [101, 102];
 
 async function ensureImageHeaderRules() {
   if (!chrome.declarativeNetRequest?.updateDynamicRules) return;
@@ -25,6 +25,26 @@ async function ensureImageHeaderRules() {
         condition: {
           urlFilter: "||pximg.net/",
           resourceTypes: ["xmlhttprequest", "image", "other"]
+        }
+      },
+      {
+        // API nội bộ thư viện RunningHub trả tên tiếng Anh khi Origin là site chính
+        // (fetch từ extension không tự set được Origin — forbidden header).
+        id: 102,
+        priority: 1,
+        action: {
+          type: "modifyHeaders",
+          requestHeaders: [
+            {
+              header: "origin",
+              operation: "set",
+              value: "https://www.runninghub.ai"
+            }
+          ]
+        },
+        condition: {
+          regexFilter: "^https://www\\.runninghub\\.ai/api/(portal/|webapp/(list|detail))",
+          resourceTypes: ["xmlhttprequest"]
         }
       }
     ]
