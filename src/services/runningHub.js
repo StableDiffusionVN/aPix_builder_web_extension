@@ -233,10 +233,13 @@ export async function getAppDefinition(apiKey, webappId, signal) {
   ]);
   const payload = await readEnvelope(response);
   const data = payload.data || {};
+  const nodes = Array.isArray(data.nodeInfoList) ? data.nodeInfoList : [];
   const info = {
     webappId: String(webappId),
     webappName: String(data.webappName || "RunningHub App").trim(),
     accessEncrypted: Boolean(data.accessEncrypted),
+    // Node RH_* = model bên thứ ba trả phí $ (ngoài coin GPU)
+    hasPaidModel: nodes.some(node => /^RH_/i.test(String(node?.nodeName || ""))),
     statisticsInfo: data.statisticsInfo && typeof data.statisticsInfo === "object" ? data.statisticsInfo : null,
     covers: Array.isArray(data.covers) ? data.covers : [],
     tags: Array.isArray(data.tags) ? data.tags : [],
@@ -246,7 +249,7 @@ export async function getAppDefinition(apiKey, webappId, signal) {
   };
   return {
     name: info.webappName,
-    nodes: Array.isArray(data.nodeInfoList) ? data.nodeInfoList : [],
+    nodes,
     info
   };
 }

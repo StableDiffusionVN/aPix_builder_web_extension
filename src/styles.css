@@ -427,6 +427,20 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
   white-space: nowrap;
 }
 
+.lite-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(114, 201, 87, 0.16);
+  color: #72c957;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .plus-warning {
   margin-top: 6px;
   padding: 6px 9px;
@@ -724,4 +738,7 @@ video.image-lightbox-image {
 }
 
 
-.app-info-cost { display: flex; flex-wrap: wrap; gap: 9px; font-size: 11px; color: var(--muted); }
+.app-info-cost { display: flex; flex-wrap: nowrap; overflow: hidden; gap: 9px; font-size: 11px; color: var(--muted); }
+.app-info-cost > span { white-space: nowrap; }
+.app-info-cost-pair, .app-info-paid-model { white-space: nowrap; }
+.app-info-cost-empty { font-style: italic; opacity: .8; color: var(--muted); }

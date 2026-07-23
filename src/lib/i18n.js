@@ -79,6 +79,10 @@ const messages = {
 
     // AppInfoCard
     "appInfo.plusWarning": "App chạy trên Plus GPU (48GB) — có thể tốn nhiều coin hơn.",
+    "appInfo.liteHint": "App chạy máy Lite (kênh giá rẻ) — chi phí thường thấp hơn máy thường.",
+    "appInfo.paidModel": "+ phí model",
+    "appInfo.paidModelHint": "App gọi model bên thứ ba trả phí $ (ngoài coin GPU). Xem giá ở mục Billing/third-party-fees trên RunningHub (cần đăng nhập); phí thật hiển thị sau mỗi lần chạy.",
+    "appInfo.noEstimate": "Chưa có thông tin đo lường",
     "appInfo.estCoinsUnit": "coin",
     "appInfo.estTooltip": "Ước tính = thời gian chạy trung bình × 0,2 coin/giây (máy thường). Thực tế thay đổi theo tham số; app Plus GPU có thể tốn hơn.",
 
@@ -323,6 +327,10 @@ const messages = {
 
     // AppInfoCard
     "appInfo.plusWarning": "This app runs on Plus GPU (48GB) — it may cost more coins.",
+    "appInfo.liteHint": "This app runs on a Lite machine (budget channel) — usually cheaper than standard.",
+    "appInfo.paidModel": "+ model fee",
+    "appInfo.paidModelHint": "This app calls a paid third-party model ($ on top of GPU coins). See Billing/third-party-fees on RunningHub (sign-in required); the real fee shows after each run.",
+    "appInfo.noEstimate": "No measurement data yet",
     "appInfo.estCoinsUnit": "coins",
     "appInfo.estTooltip": "Estimate = average run time × 0.2 coins/second (standard machine). Actual cost varies with parameters; Plus GPU apps may cost more.",
 

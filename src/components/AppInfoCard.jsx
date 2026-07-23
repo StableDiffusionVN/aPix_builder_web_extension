@@ -26,14 +26,27 @@ export function AppInfoCard({ info }) {
         <div className="app-info-title-row">
           <strong>{info.webappName}</strong>
           {info.instanceType === "plus" && <span className="plus-label" title={t("appInfo.plusWarning")}><Zap size={11} /> Plus GPU</span>}
+          {info.instanceType === "lite" && <span className="lite-label" title={t("appInfo.liteHint")}>Lite</span>}
           {info.accessEncrypted && <span className="encrypted-label"><Lock size={11} /> Private</span>}
         </div>
         <span className="app-info-id">ID {info.webappId}</span>
-        {Number(info.avgRunningSeconds) > 0 && (
+        {Number(info.avgRunningSeconds) > 0 ? (
           <div className="app-info-cost" title={t("appInfo.estTooltip")}>
             <span>⏱ ~{Math.round(Number(info.avgRunningSeconds))}s</span>
             {info.runningSuccessRate != null && info.runningSuccessRate !== "" && <span>✅ {info.runningSuccessRate}%</span>}
-            {estimateRhCoins(info.avgRunningSeconds) && <span>🪙 ~{estimateRhCoins(info.avgRunningSeconds)} {t("appInfo.estCoinsUnit")}</span>}
+            {estimateRhCoins(info.avgRunningSeconds) ? (
+              <span className="app-info-cost-pair">
+                🪙 ~{estimateRhCoins(info.avgRunningSeconds)} {t("appInfo.estCoinsUnit")}
+                {info.hasPaidModel && <span className="app-info-paid-model" title={t("appInfo.paidModelHint")}> 💲 {t("appInfo.paidModel")}</span>}
+              </span>
+            ) : info.hasPaidModel ? (
+              <span className="app-info-paid-model" title={t("appInfo.paidModelHint")}>💲 {t("appInfo.paidModel")}</span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="app-info-cost">
+            <span className="app-info-cost-empty">{t("appInfo.noEstimate")}</span>
+            {info.hasPaidModel && <span className="app-info-paid-model" title={t("appInfo.paidModelHint")}>💲 {t("appInfo.paidModel")}</span>}
           </div>
         )}
         {!!tags.length && <div className="app-info-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
