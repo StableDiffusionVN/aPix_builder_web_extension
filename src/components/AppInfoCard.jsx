@@ -1,6 +1,6 @@
 import { Lock, Zap } from "lucide-react";
 
-const PLUS_WARNING = "App chạy Plus GPU (48GB) — API key thường có thể không hỗ trợ, task có thể bị lỗi hoặc tốn nhiều coin hơn.";
+const PLUS_WARNING = "App chạy trên Plus GPU (48GB) — có thể tốn nhiều coin hơn.";
 
 function coverUrl(info) {
   const cover = info?.covers?.[0];
@@ -29,7 +29,6 @@ export function AppInfoCard({ info }) {
           {info.accessEncrypted && <span className="encrypted-label"><Lock size={11} /> Private</span>}
         </div>
         <span className="app-info-id">ID {info.webappId}</span>
-        {info.instanceType === "plus" && <div className="plus-warning">{PLUS_WARNING}</div>}
         {!!tags.length && <div className="app-info-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
       </div>
     </article>
