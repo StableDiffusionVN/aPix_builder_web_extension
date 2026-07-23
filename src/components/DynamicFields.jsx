@@ -1,10 +1,43 @@
 import { DYNAMIC_FIELD_TYPES, isDynamicFieldType, resolveDynamicFieldType } from "../lib/dynamicTypes";
+import { useObjectUrl } from "../hooks/useObjectUrl";
 import { activeSubFields, isMenuSub, isModelChoiceField, usesRemoteModelDiscovery } from "../lib/catalog";
 import { choiceOptionsFromField } from "../lib/menuChoices";
 import { SearchableMenuDropdown } from "./SearchableMenuDropdown";
 import { ImportPanel } from "./ImportPanel";
 
 const IMAGE_TYPES = ["image", "image_mask", "file"];
+
+// Field video/âm thanh: chọn file → giữ record {name, blob} trong values; upload khi chạy.
+function MediaFieldInput({ field, value, onChange }) {
+  const isVideo = field.ui.type === "video";
+  const record = value && typeof value === "object" && value.blob ? value : null;
+  const url = useObjectUrl(record?.blob || null);
+  return (
+    <label className="field" key={field.key}>
+      <span>{field.ui.label || field.key}</span>
+      {record ? (
+        <div className="media-field-preview">
+          {url ? (isVideo
+            ? <video src={url} controls playsInline preload="metadata" />
+            : <audio src={url} controls preload="metadata" />) : null}
+          <button type="button" className="media-field-clear" onClick={() => onChange(field.key, "")}>
+            Xóa file ({record.name})
+          </button>
+        </div>
+      ) : (
+        <input
+          type="file"
+          accept={isVideo ? "video/*" : "audio/*"}
+          onChange={event => {
+            const file = event.target.files?.[0];
+            if (file) onChange(field.key, { id: `${Date.now()}`, name: file.name, blob: file });
+            event.target.value = "";
+          }}
+        />
+      )}
+    </label>
+  );
+}
 
 export function DynamicFields({ fields, values, onChange, loading, discoveryLoading = false, workflowKind = "", getImageInput = null }) {
   const remoteModelDiscovery = usesRemoteModelDiscovery(workflowKind);
@@ -92,6 +125,9 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
           </button>
         </div>
       );
+    }
+    if (type === "video" || type === "audio") {
+      return <MediaFieldInput key={field.key} field={field} value={values[field.key]} onChange={onChange} />;
     }
     if (type === "text") {
       return (

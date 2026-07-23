@@ -192,12 +192,33 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
   throw new Error("RunningHub hoàn tất nhưng không có output");
 }
 
+// API nội bộ website (không cần key) — lấy instanceType ("plus" = app chạy Plus GPU,
+// API key thường có thể không hỗ trợ). Fail mềm: lỗi → null.
+async function fetchWebappInstanceType(webappId, signal) {
+  try {
+    const response = await fetch(`${BASE_URL}/api/webapp/detail`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ webappId: String(webappId) }),
+      signal
+    });
+    const payload = await response.json();
+    if (payload.code !== 0 && payload.code !== "0") return null;
+    return payload.data?.instanceType || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getAppDefinition(apiKey, webappId, signal) {
   const query = new URLSearchParams({ apiKey, webappId });
-  const response = await fetch(`${BASE_URL}/api/webapp/apiCallDemo?${query}`, {
-    headers: headers(apiKey),
-    signal
-  });
+  const [response, instanceType] = await Promise.all([
+    fetch(`${BASE_URL}/api/webapp/apiCallDemo?${query}`, {
+      headers: headers(apiKey),
+      signal
+    }),
+    fetchWebappInstanceType(webappId, signal)
+  ]);
   const payload = await readEnvelope(response);
   const data = payload.data || {};
   const info = {
@@ -206,7 +227,8 @@ export async function getAppDefinition(apiKey, webappId, signal) {
     accessEncrypted: Boolean(data.accessEncrypted),
     statisticsInfo: data.statisticsInfo && typeof data.statisticsInfo === "object" ? data.statisticsInfo : null,
     covers: Array.isArray(data.covers) ? data.covers : [],
-    tags: Array.isArray(data.tags) ? data.tags : []
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    instanceType
   };
   return {
     name: info.webappName,
@@ -259,10 +281,13 @@ export async function prepareNodes(apiKey, nodes, signal, onStatus) {
     } else if (value != null && typeof value !== "string") {
       value = String(value);
     }
+    // Bỏ node giá trị trống khỏi nodeInfoList → RunningHub dùng tham số mặc định của app
+    // (gửi fieldValue rỗng làm API lỗi).
+    if (value == null || (typeof value === "string" && !value.trim()) || (typeof value === "object" && !value.blob)) continue;
     prepared.push({
       nodeId: String(node.nodeId),
       fieldName: node.fieldName,
-      fieldValue: value ?? ""
+      fieldValue: value
     });
   }
   return prepared;
@@ -276,10 +301,11 @@ export function configFieldsToNodes(fields, values, images = {}) {
     .map(field => {
       const { nodeId, fieldName } = parseFieldId(field.id);
       const imageField = ["image", "image_mask", "file"].includes(field.ui.type);
+      const avType = field.ui.type === "video" ? "VIDEO" : field.ui.type === "audio" ? "AUDIO" : null;
       return {
         nodeId,
         fieldName,
-        fieldType: imageField ? "IMAGE" : String(field.ui.type || "STRING").toUpperCase(),
+        fieldType: imageField ? "IMAGE" : avType || String(field.ui.type || "STRING").toUpperCase(),
         fieldValue: imageField ? images[field.key] : values[field.key]
       };
     });
@@ -379,5 +405,5 @@ async function pollOutputs(apiKey, taskId, signal, onStatus) {
     }
     await delay(3500, signal);
   }
-  throw new Error("RunningHub quá thời gian chờ 10 phút");
+  throw new Error("RunningHub quá thời gian chờ 20 phút");
 }

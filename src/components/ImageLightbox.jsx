@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from "lucide-react";
+import { mediaKindFromName } from "../lib/mediaKind";
 
 export function ImageLightbox({
   open,
@@ -79,7 +80,13 @@ export function ImageLightbox({
           </button>
         </>
       ) : null}
-      <img className="image-lightbox-image" src={imageUrl} alt={title || "Output"} />
+      {mediaKindFromName(title || "") === "video" ? (
+        <video className="image-lightbox-image" src={imageUrl} controls autoPlay playsInline preload="metadata" />
+      ) : mediaKindFromName(title || "") === "audio" ? (
+        <audio className="image-lightbox-audio" src={imageUrl} controls autoPlay preload="metadata" />
+      ) : (
+        <img className="image-lightbox-image" src={imageUrl} alt={title || "Output"} />
+      )}
       {title || total > 1 ? (
         <div className="image-lightbox-caption">
           {total > 1 ? <span>{currentPosition} / {total}</span> : null}

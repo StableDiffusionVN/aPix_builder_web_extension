@@ -1,9 +1,11 @@
 import { Check, Download, Trash2 } from "lucide-react";
 import { useObjectUrl } from "../hooks/useObjectUrl";
 import { formatBytes } from "../lib/images";
+import { mediaKindFromName } from "../lib/mediaKind";
 
 function OutputRow({ output, selected, onToggle, onDownload, onDelete, onView }) {
   const url = useObjectUrl(output.blob);
+  const kind = mediaKindFromName(output.name || "", output.blob?.type || "");
   return (
     <article className="output-row">
       <button className={`check-button ${selected ? "checked" : ""}`} onClick={() => onToggle(output.id)} aria-label={`Chọn ${output.name}`}>
@@ -16,7 +18,11 @@ function OutputRow({ output, selected, onToggle, onDownload, onDelete, onView })
         aria-label={`Xem ${output.name}`}
         disabled={!url}
       >
-        {url ? <img src={url} alt={output.name} /> : null}
+        {url ? (
+          kind === "video" ? <video src={url} muted preload="metadata" />
+          : kind === "audio" ? <span className="output-thumb-audio" aria-hidden="true">♪</span>
+          : <img src={url} alt={output.name} />
+        ) : null}
       </button>
       <div className="output-meta">
         <strong>{output.name}</strong>

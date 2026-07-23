@@ -49,7 +49,7 @@ function nodeToField(node) {
     node,
     ui: {
       label: node.description || node.nodeName || node.fieldName,
-      type: type === "IMAGE" ? "image" : type === "LIST" ? "dropdown" : ["INT", "INTEGER"].includes(type) ? "int" : ["FLOAT", "NUMBER"].includes(type) ? "float" : String(node.fieldValue || "").length > 80 ? "text" : "string",
+      type: type === "IMAGE" ? "image" : type === "AUDIO" ? "audio" : type === "VIDEO" ? "video" : type === "LIST" ? "dropdown" : ["INT", "INTEGER"].includes(type) ? "int" : ["FLOAT", "NUMBER"].includes(type) ? "float" : String(node.fieldValue || "").length > 80 ? "text" : "string",
       value: node.fieldValue ?? "",
       choices
     }
