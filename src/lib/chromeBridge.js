@@ -157,20 +157,32 @@ export async function downloadBlob(blob, filename) {
   }
 }
 
+// Tương thích cũ: bản trước chỉ có comfyUrl — khởi tạo mảng comfyServers từ đó.
+function normalizeSettings(settings) {
+  const next = { ...settings };
+  if (!Array.isArray(next.comfyServers) || !next.comfyServers.length) {
+    next.comfyServers = next.comfyUrl ? [next.comfyUrl] : [];
+  } else if (next.comfyUrl && !next.comfyServers.includes(next.comfyUrl)) {
+    next.comfyServers = [...next.comfyServers, next.comfyUrl];
+  }
+  return next;
+}
+
 export async function readSettings() {
   const defaults = {
     comfyUrl: "http://127.0.0.1:8188",
     runningHubApiKey: "",
-    theme: "system"
+    theme: "system",
+    language: "auto"
   };
   if (hasChromeRuntime() && chrome.storage?.local) {
     const { settings } = await chrome.storage.local.get("settings");
-    return { ...defaults, ...(settings || {}) };
+    return normalizeSettings({ ...defaults, ...(settings || {}) });
   }
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem("apix-settings") || "{}") };
+    return normalizeSettings({ ...defaults, ...JSON.parse(localStorage.getItem("apix-settings") || "{}") });
   } catch {
-    return defaults;
+    return normalizeSettings(defaults);
   }
 }
 

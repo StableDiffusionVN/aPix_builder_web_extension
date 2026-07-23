@@ -73,7 +73,7 @@ export default function App() {
   const [images, setImages] = useState({});
   const [outputs, setOutputs] = useState([]);
   const [checked, setChecked] = useState(new Set());
-  const [settings, setSettings] = useState({ comfyUrl: "http://127.0.0.1:8188", runningHubApiKey: "", theme: "system" });
+  const [settings, setSettings] = useState({ comfyUrl: "http://127.0.0.1:8188", comfyServers: ["http://127.0.0.1:8188"], runningHubApiKey: "", theme: "system", language: "auto" });
   const [settingsDraft, setSettingsDraft] = useState(settings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadingFields, setLoadingFields] = useState(false);
@@ -891,7 +891,7 @@ export default function App() {
         settings={settingsDraft}
         onChange={setSettingsDraft}
         onSave={saveSettings}
-        onTestComfy={async () => { resetComfySession(); resetComfyDiscoveryCache(); await testComfyConnection(settingsDraft.comfyUrl); setStatus(t("settings.comfyConnectedStatus")); }}
+        onTestComfy={async url => { resetComfySession(); resetComfyDiscoveryCache(); await testComfyConnection(url || settingsDraft.comfyUrl); setStatus(t("settings.comfyConnectedStatus")); }}
         onClose={() => setSettingsOpen(false)}
       />
 

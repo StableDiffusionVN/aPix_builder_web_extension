@@ -331,6 +331,33 @@ input[type="range"] { min-height: 20px; height: 20px; padding: 0; border: 0; box
 .settings-note svg { flex: 0 0 auto; color: var(--success); }
 .connection-result { margin: -8px 0 14px; color: var(--muted); font-size: 10px; }
 
+/* Settings redesign — section nhiều server/key (tham khảo bố cục iOS ApiSettings) */
+.settings-section { display: flex; flex-direction: column; gap: 9px; margin-bottom: 22px; }
+.settings-section .field { margin-bottom: 0; }
+.settings-section-title { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.settings-section-title svg { color: var(--accent); }
+.settings-item-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.settings-item-row { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 5px 8px 5px 10px; }
+.settings-item-row + .settings-item-row { border-top: 1px solid var(--line); }
+.settings-item-row.is-active { background: var(--accent-soft); }
+.settings-item-row input[type="radio"] { width: 15px; height: 15px; min-height: 0; flex: 0 0 auto; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.settings-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 11px; }
+.settings-key-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
+.settings-item-index { flex: 0 0 auto; color: var(--faint); font-size: 10px; font-weight: 650; }
+.settings-icon-button { width: 30px; height: 30px; flex: 0 0 auto; display: inline-grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--muted); cursor: pointer; }
+.settings-icon-button:hover:not(:disabled) { border-color: var(--line); background: var(--surface-2); color: var(--text); }
+.settings-icon-button:disabled { opacity: .5; cursor: default; }
+.settings-empty { padding: 14px 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--faint); font-size: 11px; line-height: 1.5; text-align: center; }
+.settings-add-row { display: flex; gap: 7px; }
+.settings-add-row input { flex: 1; min-width: 0; font-size: 11px; }
+.settings-add-row button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; min-height: 38px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text); font-size: 11px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+.settings-add-row button:hover:not(:disabled) { border-color: var(--accent); }
+.settings-add-row button:disabled { opacity: .55; cursor: default; }
+.settings-hint { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.settings-section .connection-result { margin: 0; }
+.connection-result.is-ok { color: var(--success); }
+.connection-result.is-fail { color: var(--danger); }
+
 .image-lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.82); }
 .image-lightbox-toolbar { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; }
 .image-lightbox-nav { position: absolute; top: 50%; z-index: 1; width: 52px; height: 112px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 0; color: rgba(255,255,255,.82); background: transparent; box-shadow: none; opacity: 0; transform: translateY(-50%); cursor: pointer; transition: opacity .14s ease, color .14s ease, transform .14s ease; }
