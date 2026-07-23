@@ -12,6 +12,8 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkflowPicker } from "./components/WorkflowPicker";
 import { consumePendingImport, downloadBlob, loadImportBlob, onPendingImport, readSettings, readWorkspaceState, runExclusiveImport, writeSettings, writeWorkspaceState } from "./lib/chromeBridge";
 import { defaultValues, expandActiveFields, flattenConfigInputs, loadCatalog, loadComfyWorkflow, loadTemplateConfig } from "./lib/catalog";
+import { resolveLanguage, setLanguage, t } from "./lib/i18n";
+import { I18nProvider } from "./lib/I18nContext";
 
 const IMAGE_FIELD_TYPES = ["image", "image_mask", "file"];
 import { normalizeImageRecord } from "./lib/images";
@@ -84,7 +86,7 @@ export default function App() {
   const lanes = { comfy: comfyLane, rh: rhLane };
   const [autoRunImports, setAutoRunImports] = useState([]);
   const [previewOutput, setPreviewOutput] = useState(null);
-  const [status, setStatus] = useState("Sẵn sàng");
+  const [status, setStatus] = useState(() => t("app.status.ready"));
   const [error, setError] = useState("");
   const handledImportIdsRef = useRef(new Set());
   const workspaceReadyRef = useRef(false);
@@ -104,7 +106,7 @@ export default function App() {
       const record = await normalizeImageRecord(file, file.name);
       await saveInput(record, slot);
       setImages(current => ({ ...current, [slot]: record }));
-      setStatus("Đã import ảnh");
+      setStatus(t("import.done"));
     } catch (nextError) {
       setError(nextError.message);
     }
@@ -112,7 +114,7 @@ export default function App() {
 
   const importFromUrl = useCallback(async (slot, url, options = {}) => {
     setError("");
-    setStatus("Đang import ảnh từ trang web…");
+    setStatus(t("import.fromWeb"));
     try {
       const { blob, suggestedName } = await loadImportBlob({
         url,
@@ -129,11 +131,11 @@ export default function App() {
       const record = await normalizeImageRecord(blob, name);
       await saveInput(record, slot);
       setImages(current => ({ ...current, [slot]: record }));
-      setStatus("Đã import ảnh từ trang web");
+      setStatus(t("import.fromWebDone"));
       return record;
     } catch (nextError) {
       setError(nextError.message);
-      setStatus("Import thất bại");
+      setStatus(t("import.failed"));
       return null;
     }
   }, []);
@@ -152,7 +154,7 @@ export default function App() {
 
       if (payload.captureError && !payload.embeddedImage && !payload.stagingId) {
         setError(payload.captureError);
-        setStatus("Import thất bại");
+        setStatus(t("import.failed"));
         return null;
       }
 
@@ -171,7 +173,7 @@ export default function App() {
           createdAt: Number(payload.createdAt) || Date.now(),
           image: importedImage
         }].sort((left, right) => left.createdAt - right.createdAt));
-        setStatus("Đã nhận ảnh, đang chuẩn bị chạy…");
+        setStatus(t("import.autoRunPreparing"));
       }
       return importedImage;
     });
@@ -194,8 +196,10 @@ export default function App() {
       setSelected(restoredSelected);
       setImages(savedImages || {});
       setOutputs(savedOutputs);
+      setLanguage(resolveLanguage(savedSettings.language || "auto"));
       setSettings(savedSettings);
       setSettingsDraft(savedSettings);
+      setStatus(t("app.status.ready"));
       setSettingsOpen(Boolean(savedWorkspace.settingsOpen));
       workspaceReadyRef.current = true;
     }).catch(nextError => setError(nextError.message));
@@ -299,7 +303,7 @@ export default function App() {
                 try {
                   discovery = await getComfyDiscovery(settings.comfyUrl);
                 } catch (discoveryError) {
-                  if (!cancelled) setError(discoveryError.message || "Không quét được model từ ComfyUI");
+                  if (!cancelled) setError(discoveryError.message || t("discovery.failed"));
                 }
               }
               discovery = await augmentDiscoveryWithSdvn(discovery, baseFields, workflowJson);
@@ -424,14 +428,14 @@ export default function App() {
     }
     setOutputs(current => [...saved, ...current]);
     setChecked(new Set(saved.map(item => item.id)));
-    onStatus?.(`Hoàn tất ${saved.length} output`);
+    onStatus?.(t("run.completedOutputs", { count: saved.length }));
   }
 
   async function executeJob(laneKey, job) {
     const lane = lanes[laneKey];
     if (job.selected.kind.startsWith("runninghub") && !job.settings.runningHubApiKey) {
       setSettingsOpen(true);
-      throw new Error("Cần RunningHub API Key để chạy lựa chọn này");
+      throw new Error(t("run.needApiKey"));
     }
 
     lane.setError("");
@@ -445,8 +449,8 @@ export default function App() {
     const updateStatus = message => lane.setStatus(message);
 
     try {
-      updateStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý…`);
-      if (queueAhead) updateStatus(`${runnerLabelForKind(job.selected.kind)} đang xử lý (${queueAhead} trong hàng chờ)…`);
+      updateStatus(t("run.processing", { runner: runnerLabelForKind(job.selected.kind) }));
+      if (queueAhead) updateStatus(t("run.processingQueued", { runner: runnerLabelForKind(job.selected.kind), count: queueAhead }));
 
       let results;
       if (job.selected.kind === "comfy") {
@@ -490,7 +494,7 @@ export default function App() {
       await persistResults(results, job, startedAt, updateStatus);
     } catch (nextError) {
       if (nextError.name !== "AbortError") lane.setError(nextError.message);
-      updateStatus(nextError.name === "AbortError" ? "Đã hủy" : "Chạy thất bại");
+      updateStatus(nextError.name === "AbortError" ? t("run.cancelled") : t("run.failed"));
       throw nextError;
     } finally {
       lane.activeJobRef.current = null;
@@ -499,7 +503,7 @@ export default function App() {
       lane.setQueue(remaining);
       if (nextJob) {
         lane.setActiveJob(nextJob);
-        updateStatus(remaining.length ? `Chuyển sang job tiếp theo (${remaining.length} còn lại)…` : "Chuyển sang job tiếp theo…");
+        updateStatus(remaining.length ? t("run.nextJobRemaining", { count: remaining.length }) : t("run.nextJob"));
         void executeJob(laneKey, nextJob).catch(() => {});
       } else {
         lane.setActiveJob(null);
@@ -509,7 +513,7 @@ export default function App() {
   }
 
   function enqueueRun(imageOverride = null) {
-    if (!selected) return setError("Hãy chọn template hoặc app");
+    if (!selected) return setError(t("run.selectFirst"));
     const missingField = activeImageFields.find(field => {
       const slot = imageSlots[field.key];
       if (imageOverride && slot === "current") return false;
@@ -518,13 +522,13 @@ export default function App() {
     if (missingField) {
       return setError(
         activeImageFields.length > 1
-          ? `Hãy import ảnh cho "${missingField.ui?.label || missingField.key}" trước khi chạy`
-          : "Hãy import ảnh trước khi chạy"
+          ? t("run.importImageFor", { label: missingField.ui?.label || missingField.key })
+          : t("run.importImageFirst")
       );
     }
     if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
       setSettingsOpen(true);
-      return setError("Cần RunningHub API Key để chạy lựa chọn này");
+      return setError(t("run.needApiKey"));
     }
 
     const job = createJobSnapshot(imageOverride);
@@ -533,7 +537,7 @@ export default function App() {
     if (lane.running || lane.queueRef.current.length > 0) {
       const nextQueue = [...lane.queueRef.current, job];
       lane.setQueue(nextQueue);
-      lane.setStatus(`Đã thêm vào hàng chờ (${nextQueue.length})`);
+      lane.setStatus(t("run.queued", { count: nextQueue.length }));
       lane.setError("");
       return;
     }
@@ -546,7 +550,7 @@ export default function App() {
     if (selected.kind.startsWith("runninghub") && !settings.runningHubApiKey) {
       setSettingsDraft(settings);
       setSettingsOpen(true);
-      setError("Nhập RunningHub API Key để chạy ảnh từ menu chuột phải");
+      setError(t("run.needApiKeyContextMenu"));
       return;
     }
     if (!config || loadingFields || (selected.kind === "comfy" && discoveryLoading)) return;
@@ -562,14 +566,14 @@ export default function App() {
     if (!lane.queueRef.current.length && !pendingAutoRuns) return;
     lane.setQueue([]);
     if (pendingAutoRuns) setAutoRunImports([]);
-    lane.setStatus("Đã xóa hàng chờ");
+    lane.setStatus(t("run.queueCleared"));
     lane.setError("");
   }
 
   async function stopCurrent() {
     const lane = lanes[currentLaneKey];
     if (!lane.running && !lane.activeJobRef.current) return;
-    lane.setStatus("Đang dừng…");
+    lane.setStatus(t("run.stopping"));
     lane.abortRef.current?.abort();
     const job = lane.activeJobRef.current;
     if (currentLaneKey === "comfy" && job?.selected?.kind === "comfy" && job.settings?.comfyUrl) {
@@ -625,7 +629,7 @@ export default function App() {
     if (!item) return;
     setSelected(item);
     setSelectedByMode(current => ({ ...current, [item.kind]: item.id }));
-    setStatus(`Đã chọn ${item.name}`);
+    setStatus(t("catalog.selected", { name: item.name }));
   }
 
   async function persistImported(imported) {
@@ -635,24 +639,24 @@ export default function App() {
       return [...current.filter(item => !importedIds.has(item.id)), ...imported];
     });
     if (imported[0]) setSelected(imported[0]);
-    setStatus(`Đã import ${imported.length} template`);
+    setStatus(t("catalog.importedTemplates", { count: imported.length }));
   }
 
   async function chooseTemplateFolder() {
     setError("");
     if (typeof window.showDirectoryPicker !== "function") {
-      setError("Chrome hiện tại không hỗ trợ chọn thư mục an toàn. Hãy cập nhật Chrome.");
+      setError(t("catalog.noDirPicker"));
       return;
     }
     setImportingFolder(true);
     try {
       const directoryHandle = await window.showDirectoryPicker({ mode: "read" });
-      setStatus("Đang quét thư mục template…");
+      setStatus(t("catalog.scanningFolder"));
       await persistImported(await importTemplateDirectory(directoryHandle, mode));
     } catch (nextError) {
       if (nextError.name === "AbortError") return;
       setError(nextError.message);
-      setStatus("Import template thất bại");
+      setStatus(t("catalog.importFailed"));
     } finally {
       setImportingFolder(false);
     }
@@ -663,11 +667,11 @@ export default function App() {
     setError("");
     setImportingFolder(true);
     try {
-      setStatus("Đang giải nén template…");
+      setStatus(t("catalog.unzipping"));
       await persistImported(await importTemplateZip(file, mode));
     } catch (nextError) {
       setError(nextError.message);
-      setStatus("Import .zip thất bại");
+      setStatus(t("catalog.zipFailed"));
     } finally {
       setImportingFolder(false);
     }
@@ -678,7 +682,7 @@ export default function App() {
     if (!settings.runningHubApiKey) {
       setSettingsDraft(settings);
       setSettingsOpen(true);
-      setError("Nhập RunningHub API Key trước để quét thông tin App");
+      setError(t("catalog.needApiKeyScan"));
       return false;
     }
     setScanningApp(true);
@@ -686,20 +690,20 @@ export default function App() {
       const existing = catalog.find(item => item.kind === "runninghub-app" && item.slug === String(appId).trim());
       if (existing) {
         setSelected(existing);
-        setStatus(`Đã chọn ${existing.name}`);
+        setStatus(t("catalog.selected", { name: existing.name }));
         return;
       }
-      setStatus("Đang quét thông tin RunningHub App…");
+      setStatus(t("catalog.scanningApp"));
       const definition = await getAppDefinition(settings.runningHubApiKey, String(appId).trim());
       const item = createCustomRunningHubApp(appId, definition.info);
       await saveCustomCatalogItem(item);
       setCatalog(current => [...current, item]);
       setSelected(item);
       setAppInfo(definition.info);
-      setStatus(`Đã thêm ${item.name}`);
+      setStatus(t("catalog.addedApp", { name: item.name }));
     } catch (nextError) {
       setError(nextError.message);
-      setStatus("App ID không hợp lệ");
+      setStatus(t("catalog.invalidAppId"));
       return false;
     } finally {
       setScanningApp(false);
@@ -716,7 +720,7 @@ export default function App() {
     if (!item?.custom) return;
     await deleteCustomCatalogItem(item.id);
     setCatalog(current => current.filter(candidate => candidate.id !== item.id));
-    setStatus(`Đã xóa ${item.name}`);
+    setStatus(t("catalog.removedItem", { name: item.name }));
   }
 
   async function removeInput(slot) {
@@ -773,17 +777,18 @@ export default function App() {
     resetComfySession();
     resetComfyDiscoveryCache();
     setSettingsOpen(false);
-    setStatus("Đã lưu Settings");
+    setStatus(t("settings.saved"));
   }
 
   return (
+    <I18nProvider language={settings.language || "auto"}>
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-main">
           <div className="brand"><BrandMark /><strong>aPix Builder</strong><span>Web</span></div>
-          <div className="topbar-actions"><span className="ready-dot" title={currentLane.running ? currentLane.status : status} /><button className="square-button" onClick={() => { setSettingsDraft(settings); setSettingsOpen(true); }} aria-label="Mở Settings"><Settings size={19} /></button></div>
+          <div className="topbar-actions"><span className="ready-dot" title={currentLane.running ? currentLane.status : status} /><button className="square-button" onClick={() => { setSettingsDraft(settings); setSettingsOpen(true); }} aria-label={t("app.openSettings")}><Settings size={19} /></button></div>
         </div>
-        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); if (!lanes[laneKeyForMode(nextMode)].running) setStatus(`Chế độ ${modeLabelForKind(nextMode)}`); }} />
+        <ModeTabs value={mode} onChange={nextMode => { setMode(nextMode); setError(""); if (!lanes[laneKeyForMode(nextMode)].running) setStatus(t("app.modeChanged", { mode: modeLabelForKind(nextMode) })); }} />
       </header>
 
       <main>
@@ -823,7 +828,7 @@ export default function App() {
           return binding ? (
             <ImportPanel
               key={field.key}
-              label={topLevelImageFields.length > 1 ? (field.ui?.label || field.key) : "Import ảnh"}
+              label={topLevelImageFields.length > 1 ? (field.ui?.label || field.key) : t("import.title")}
               {...binding}
             />
           ) : null;
@@ -848,20 +853,20 @@ export default function App() {
             onCancel={stopCurrent}
             onClearQueue={clearQueue}
             onStopAll={stopAll}
-            runLabel={`Chạy ${selected?.name || "workflow"}`}
+            runLabel={t("run.runLabel", { name: selected?.name || t("run.workflowFallback") })}
             runningLabel={currentLane.activeJob?.selected?.name}
             runningRunner={currentLane.activeJob ? runnerLabelForKind(currentLane.activeJob.selected.kind) : ""}
           />
           {otherLane.running && otherLane.activeJob ? (
             <div className="queue-mode-hint">
-              {runnerLabelForKind(otherLane.activeJob.selected.kind)} đang chạy song song: <strong>{otherLane.activeJob.selected.name}</strong>
+              {t("run.parallelRunning", { runner: runnerLabelForKind(otherLane.activeJob.selected.kind) })} <strong>{otherLane.activeJob.selected.name}</strong>
             </div>
           ) : null}
           {currentLane.running && currentLane.status ? (
             <div className="processing-status"><LoaderCircle className="spin" size={14} /><span>{currentLane.status}</span></div>
           ) : null}
           {!currentLane.running && queueCount > 0 ? (
-            <div className="queue-status">{queueCount} job trong hàng chờ</div>
+            <div className="queue-status">{t("run.jobsInQueue", { count: queueCount })}</div>
           ) : null}
           {(currentLane.error || error) ? (
             <div className="error-message" role="alert">{currentLane.error || error}</div>
@@ -886,7 +891,7 @@ export default function App() {
         settings={settingsDraft}
         onChange={setSettingsDraft}
         onSave={saveSettings}
-        onTestComfy={async () => { resetComfySession(); resetComfyDiscoveryCache(); await testComfyConnection(settingsDraft.comfyUrl); setStatus("ComfyUI đã kết nối"); }}
+        onTestComfy={async () => { resetComfySession(); resetComfyDiscoveryCache(); await testComfyConnection(settingsDraft.comfyUrl); setStatus(t("settings.comfyConnectedStatus")); }}
         onClose={() => setSettingsOpen(false)}
       />
 
@@ -904,5 +909,6 @@ export default function App() {
         onDownload={previewOutput?.output ? () => downloadBlob(previewOutput.output.blob, previewOutput.output.name) : undefined}
       />
     </div>
+    </I18nProvider>
   );
 }

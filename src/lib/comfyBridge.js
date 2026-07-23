@@ -1,4 +1,5 @@
 import { hasChromeRuntime } from "./chromeBridge.js";
+import { t } from "./i18n.js";
 import { sanitizeComfyFetchUrl } from "./comfyTarget.js";
 
 export function uint8ArrayToBase64(bytes) {
@@ -80,7 +81,7 @@ export async function comfyFetch(url, options = {}) {
 
   const result = await chrome.runtime.sendMessage(message);
   if (!result) {
-    throw new Error("ComfyUI không phản hồi (extension background)");
+    throw new Error(t("comfy.noResponse"));
   }
   if (!result.success) {
     throw new Error(result.error || "ComfyUI request failed");

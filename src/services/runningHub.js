@@ -1,4 +1,5 @@
 import { fetchWithRetry } from "../lib/fetchRetry.js";
+import { t } from "../lib/i18n.js";
 import { expandActiveFields } from "../lib/catalog.js";
 
 const BASE_URL = "https://www.runninghub.ai";
@@ -52,7 +53,7 @@ function parseRhApiKeys(apiKey) {
 // Chạy qua pool key: hết điểm/bận → tự chuyển key kế.
 async function runWithRhFailover(apiKey, onStatus, runOnce) {
   const keys = parseRhApiKeys(apiKey);
-  if (!keys.length) throw new Error("Chưa có RunningHub API key");
+  if (!keys.length) throw new Error(t("rh.noApiKey"));
   let lastError;
   for (let index = 0; index < keys.length; index += 1) {
     try {
@@ -62,8 +63,7 @@ async function runWithRhFailover(apiKey, onStatus, runOnce) {
       lastError = error;
       const retryable = isRhInsufficientCoins(error) || isRhQueueMaxed(error);
       if (retryable && index < keys.length - 1) {
-        const reason = isRhQueueMaxed(error) ? "đang bận" : "hết điểm";
-        onStatus?.(`Key #${index + 1} ${reason} — chuyển key #${index + 2}…`);
+        onStatus?.(t(isRhQueueMaxed(error) ? "rh.switchKeyBusy" : "rh.switchKeyNoCredit", { from: index + 1, to: index + 2 }));
         continue;
       }
       throw error;
@@ -106,7 +106,7 @@ function outputUrl(output) {
 }
 
 function rhTaskFailureMessage(payload) {
-  return payload.data?.failedReason?.exception_message || payload.msg || "RunningHub task thất bại";
+  return payload.data?.failedReason?.exception_message || payload.msg || t("rh.taskFailed");
 }
 
 async function queryTaskOutputs(apiKey, taskId, signal) {
@@ -133,7 +133,7 @@ async function downloadOutputBlob(url, signal, onStatus) {
   const response = await fetchWithRetry(url, {
     signal,
     onRetry: ({ attempt }) => {
-      onStatus?.(`Đang thử tải lại output (${attempt})…`);
+      onStatus?.(t("rh.retryDownload", { attempt }));
     }
   });
   return response.blob();
@@ -162,18 +162,18 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
       if (signal?.aborted || error?.name === "AbortError") throw error;
     }
 
-    onStatus?.("Kiểm tra lại trạng thái task…");
+    onStatus?.(t("rh.recheckTask"));
     const refreshed = await queryTaskOutputs(apiKey, taskId, signal);
     if (rhCodeEquals(refreshed.code, 805)) throw new Error(rhTaskFailureMessage(refreshed));
     if (!isRhTaskSuccessCode(refreshed.code)) {
-      throw new Error(downloadError?.message || "Không tải được output");
+      throw new Error(downloadError?.message || t("rh.downloadFailed"));
     }
 
     const refreshedList = normalizeRhOutputList(refreshed.data);
     const freshUrl = outputUrl(refreshedList[index]) || outputUrl(refreshedList.find(item => outputUrl(item)));
     if (!freshUrl) continue;
 
-    onStatus?.("Task đã hoàn thành, thử tải lại output…");
+    onStatus?.(t("rh.taskDoneRetry"));
     try {
       const blob = await downloadOutputBlob(freshUrl, signal, onStatus);
       results.push({ blob, name: outputNameFromUrl(freshUrl, index) });
@@ -187,9 +187,9 @@ async function downloadRhOutputs(apiKey, taskId, outputs, signal, onStatus) {
   const final = await queryTaskOutputs(apiKey, taskId, signal);
   if (rhCodeEquals(final.code, 805)) throw new Error(rhTaskFailureMessage(final));
   if (isRhTaskSuccessCode(final.code) && normalizeRhOutputList(final.data).some(item => outputUrl(item))) {
-    throw new Error("Không tải được output sau nhiều lần thử");
+    throw new Error(t("rh.downloadFailedRetries"));
   }
-  throw new Error("RunningHub hoàn tất nhưng không có output");
+  throw new Error(t("rh.noOutputs"));
 }
 
 // API nội bộ website (không cần key) — lấy instanceType ("plus" = app chạy Plus GPU,
@@ -249,7 +249,7 @@ export async function uploadImage(apiKey, image, signal) {
     signal
   });
   const payload = await readEnvelope(response);
-  if (!payload.data?.fileName) throw new Error("RunningHub không trả về tên tệp đã tải lên");
+  if (!payload.data?.fileName) throw new Error(t("rh.noUploadName"));
   return payload.data.fileName;
 }
 
@@ -272,7 +272,7 @@ export async function prepareNodes(apiKey, nodes, signal, onStatus) {
     if (isMediaType(node.fieldType) && value && typeof value === "object" && value.blob) {
       const cacheKey = value.id || value;
       if (!uploadCache.has(cacheKey)) {
-        onStatus?.("Đang tải ảnh lên RunningHub…");
+        onStatus?.(t("rh.uploadingImage"));
         uploadCache.set(cacheKey, await uploadImage(apiKey, value, signal));
       }
       value = uploadCache.get(cacheKey);
@@ -314,7 +314,7 @@ export function configFieldsToNodes(fields, values, images = {}) {
 export async function runRunningHubApp({ apiKey, webappId, nodes, signal, onStatus }) {
   return runWithRhFailover(apiKey, onStatus, async key => {
     const nodeInfoList = await prepareNodes(key, nodes, signal, onStatus);
-    onStatus?.("Đang gửi AI App…");
+    onStatus?.(t("rh.sendingApp"));
     const response = await fetch(`${BASE_URL}/task/openapi/ai-app/run`, {
       method: "POST",
       headers: headers(key, { "content-type": "application/json" }),
@@ -329,7 +329,7 @@ export async function runRunningHubApp({ apiKey, webappId, nodes, signal, onStat
 export async function runRunningHubWorkflow({ apiKey, workflowId, nodes, signal, onStatus }) {
   return runWithRhFailover(apiKey, onStatus, async key => {
     const nodeInfoList = await prepareNodes(key, nodes, signal, onStatus);
-    onStatus?.("Đang gửi workflow…");
+    onStatus?.(t("rh.sendingWorkflow"));
     const response = await fetch(`${BASE_URL}/task/openapi/create`, {
       method: "POST",
       headers: headers(key, { "content-type": "application/json" }),
@@ -357,7 +357,7 @@ export async function cancelRunningHubTask(apiKey, taskId) {
 }
 
 async function waitForOutputs(apiKey, taskId, signal, onStatus) {
-  if (!taskId) throw new Error("RunningHub không trả về taskId");
+  if (!taskId) throw new Error(t("rh.noTaskId"));
   try {
     return await pollOutputs(apiKey, taskId, signal, onStatus);
   } catch (error) {
@@ -382,7 +382,7 @@ async function pollOutputs(apiKey, taskId, signal, onStatus) {
       if (signal?.aborted || pollError?.name === "AbortError") throw pollError;
       pollErrors += 1;
       if (pollErrors >= 5) throw pollError;
-      onStatus?.(`Mất kết nối, thử lại (${pollErrors}/5)…`);
+      onStatus?.(t("rh.reconnecting", { attempt: pollErrors }));
       await delay(2500, signal);
       continue;
     }
@@ -390,20 +390,20 @@ async function pollOutputs(apiKey, taskId, signal, onStatus) {
     if (isRhTaskSuccessCode(payload.code) && payload.data) {
       const list = normalizeRhOutputList(payload.data);
       if (list.some(item => outputUrl(item))) {
-        onStatus?.("Đang tải output…");
+        onStatus?.(t("rh.downloadingOutputs"));
         return downloadRhOutputs(apiKey, taskId, list, signal, onStatus);
       }
     }
     if (rhCodeEquals(payload.code, 805)) throw new Error(rhTaskFailureMessage(payload));
 
     if (rhCodeEquals(payload.code, 804)) {
-      onStatus?.("RunningHub đang xử lý…");
+      onStatus?.(t("rh.processing"));
     } else if (rhCodeEquals(payload.code, 813)) {
-      onStatus?.("Đang chờ hàng đợi RunningHub…");
+      onStatus?.(t("rh.waitingQueue"));
     } else {
-      onStatus?.("RunningHub đang xử lý…");
+      onStatus?.(t("rh.processing"));
     }
     await delay(3500, signal);
   }
-  throw new Error("RunningHub quá thời gian chờ 20 phút");
+  throw new Error(t("rh.timeout"));
 }

@@ -4,6 +4,7 @@ import { activeSubFields, isMenuSub, isModelChoiceField, usesRemoteModelDiscover
 import { choiceOptionsFromField } from "../lib/menuChoices";
 import { SearchableMenuDropdown } from "./SearchableMenuDropdown";
 import { ImportPanel } from "./ImportPanel";
+import { t } from "../lib/i18n";
 
 const IMAGE_TYPES = ["image", "image_mask", "file"];
 
@@ -21,7 +22,7 @@ function MediaFieldInput({ field, value, onChange }) {
             ? <video src={url} controls playsInline preload="metadata" />
             : <audio src={url} controls preload="metadata" />) : null}
           <button type="button" className="media-field-clear" onClick={() => onChange(field.key, "")}>
-            Xóa file ({record.name})
+            {t("fields.clearFile", { name: record.name })}
           </button>
         </div>
       ) : (
@@ -66,11 +67,11 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
             value={values[field.key] ?? ""}
             options={options}
             onChange={nextValue => onChange(field.key, nextValue)}
-            placeholder={`Chọn ${field.ui.label || field.key}…`}
-            searchPlaceholder={`Tìm ${field.ui.label || field.key}…`}
+            placeholder={t("fields.choose", { label: field.ui.label || field.key })}
+            searchPlaceholder={t("fields.search", { label: field.ui.label || field.key })}
             loading={discoveryLoading && usesRemoteModels}
             disabled={discoveryLoading && usesRemoteModels && options.length === 0}
-            emptyMessage={usesRemoteModels && discoveryLoading ? "Đang tải…" : "Không có lựa chọn"}
+            emptyMessage={usesRemoteModels && discoveryLoading ? t("common.loading") : t("fields.noChoices")}
           />
         </label>
       );
@@ -133,7 +134,7 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
       return (
         <label className="field" key={field.key}>
           <span>{field.ui.label || field.key}</span>
-          <textarea rows={3} value={values[field.key] ?? ""} placeholder="Mô tả thay đổi bạn muốn…" onChange={event => onChange(field.key, event.target.value)} />
+          <textarea rows={3} value={values[field.key] ?? ""} placeholder={t("fields.promptPlaceholder")} onChange={event => onChange(field.key, event.target.value)} />
         </label>
       );
     }
@@ -179,12 +180,12 @@ export function DynamicFields({ fields, values, onChange, loading, discoveryLoad
 
   return (
     <section className="tool-section configure-section" aria-labelledby="configure-title">
-      <h2 id="configure-title">Thiết lập</h2>
+      <h2 id="configure-title">{t("fields.title")}</h2>
       {(loading || (remoteModelDiscovery && discoveryLoading)) && (
         <div className="inline-status">
           {loading
-            ? (workflowKind === "comfy" ? "Đang tải trường dữ liệu…" : "Đang tải trường dữ liệu từ RunningHub…")
-            : "Đang quét checkpoint/LoRA từ ComfyUI…"}
+            ? (workflowKind === "comfy" ? t("fields.loading") : t("fields.loadingRh"))
+            : t("fields.scanningModels")}
         </div>
       )}
       <div className="field-stack">

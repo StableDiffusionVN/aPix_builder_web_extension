@@ -4,6 +4,7 @@ import {
   parseStagingRef,
   readStagedImage
 } from "../../public/imageStaging.js";
+import { t } from "./i18n.js";
 
 export const hasChromeRuntime = () => Boolean(globalThis.chrome?.runtime?.id);
 
@@ -67,10 +68,10 @@ export async function loadImportBlob({
   }
 
   if (!allowRemoteFetch) {
-    throw new Error("Không đọc được ảnh đã staging");
+    throw new Error(t("import.stagingReadFailed"));
   }
 
-  if (!url) throw new Error("Không có ảnh để import");
+  if (!url) throw new Error(t("import.noImage"));
 
   if (url.startsWith("data:")) {
     const blob = await fetch(url).then(response => response.blob());
@@ -86,7 +87,7 @@ export async function loadImportBlob({
       tabId: tabId ?? tab.tabId,
       windowId: windowId ?? tab.windowId
     });
-    if (!response?.ok) throw new Error(response?.error || "Không thể import ảnh từ trang web");
+    if (!response?.ok) throw new Error(response?.error || t("import.fromWebFailed"));
 
     if (response.embeddedImage?.base64) {
       return {
@@ -103,11 +104,11 @@ export async function loadImportBlob({
       };
     }
 
-    throw new Error("Không thể import ảnh từ trang web");
+    throw new Error(t("import.fromWebFailed"));
   }
 
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Không thể tải ảnh (${response.status})`);
+  if (!response.ok) throw new Error(t("import.downloadFailed", { status: response.status }));
   const blob = await response.blob();
   return { blob, suggestedName: name || filenameFromUrl(url) };
 }

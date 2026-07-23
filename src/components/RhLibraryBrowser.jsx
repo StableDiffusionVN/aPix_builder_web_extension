@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownToLine, ExternalLink, Heart, LoaderCircle, Play, Search, X } from "lucide-react";
-import { CATEGORY_NAMES_VI, ensureLibraryHeaderRules, fetchRhLibraryList, fetchRhLibraryTags } from "../services/rhLibrary";
+import { categoryName, ensureLibraryHeaderRules, fetchRhLibraryList, fetchRhLibraryTags } from "../services/rhLibrary";
+import { getLocale, t } from "../lib/i18n";
+import { useI18n } from "../lib/I18nContext";
 
 const SORTS = [
-  { id: "RECOMMEND", label: "Đề xuất" },
-  { id: "HOTTEST", label: "Hot" },
-  { id: "NEWEST", label: "Mới nhất" }
+  { id: "RECOMMEND", labelKey: "rhlib.sort.recommend" },
+  { id: "HOTTEST", labelKey: "rhlib.sort.hottest" },
+  { id: "NEWEST", labelKey: "rhlib.sort.newest" }
 ];
 
 function formatCount(value) {
   try {
-    return new Intl.NumberFormat("vi-VN", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
+    return new Intl.NumberFormat(getLocale(), { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
   } catch {
     return String(value || 0);
   }
@@ -19,6 +21,7 @@ function formatCount(value) {
 
 /// Thư viện duyệt AI App RunningHub — overlay trong side panel; chọn card → Import chạy flow addCustomApp.
 export function RhLibraryBrowser({ open, onClose, onImport, importing = false }) {
+  const { lang } = useI18n();
   const [tags, setTags] = useState([]);
   const [categoryId, setCategoryId] = useState("");
   const [sort, setSort] = useState("RECOMMEND");
@@ -97,10 +100,10 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
     <div className="rh-library-overlay" role="presentation" onMouseDown={event => {
       if (event.target === event.currentTarget) onClose?.();
     }}>
-      <section className="rh-library-panel" role="dialog" aria-modal="true" aria-label="Thư viện RunningHub">
+      <section className="rh-library-panel" role="dialog" aria-modal="true" aria-label={t("rhlib.title")}>
         <header className="rh-library-header">
-          <h2>Thư viện RunningHub</h2>
-          <button type="button" className="square-button" onClick={onClose} aria-label="Đóng"><X size={16} /></button>
+          <h2>{t("rhlib.title")}</h2>
+          <button type="button" className="square-button" onClick={onClose} aria-label={t("common.close")}><X size={16} /></button>
         </header>
         <div className="rh-library-filters">
           <div className="rh-library-search">
@@ -108,19 +111,19 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
             <input
               type="search"
               value={searchInput}
-              placeholder="Tìm app theo tên…"
+              placeholder={t("rhlib.searchPlaceholder")}
               onChange={event => setSearchInput(event.target.value)}
             />
           </div>
-          <select value={categoryId} onChange={event => setCategoryId(event.target.value)} aria-label="Danh mục">
-            <option value="">Tất cả danh mục</option>
-            {tags.map(tag => <option key={tag.id} value={tag.id}>{CATEGORY_NAMES_VI[tag.id] || tag.name}</option>)}
+          <select value={categoryId} onChange={event => setCategoryId(event.target.value)} aria-label={t("rhlib.categoryAria")}>
+            <option value="">{t("rhlib.allCategories")}</option>
+            {tags.map(tag => <option key={tag.id} value={tag.id}>{categoryName(tag.id, lang, tag.name)}</option>)}
           </select>
-          <select value={sort} onChange={event => setSort(event.target.value)} aria-label="Sắp xếp">
-            {SORTS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+          <select value={sort} onChange={event => setSort(event.target.value)} aria-label={t("rhlib.sortAria")}>
+            {SORTS.map(option => <option key={option.id} value={option.id}>{t(option.labelKey)}</option>)}
           </select>
         </div>
-        <div className="rh-library-count">{loading && !records.length ? "Đang tải…" : `${formatCount(total)} kết quả`}</div>
+        <div className="rh-library-count">{loading && !records.length ? t("common.loading") : t("rhlib.results", { count: formatCount(total) })}</div>
         <div
           className="rh-library-grid"
           ref={listRef}
@@ -130,7 +133,7 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
           }}
         >
           {failed && !records.length ? (
-            <p className="rh-library-error">Không tải được danh sách từ RunningHub — kiểm tra mạng rồi thử lại.</p>
+            <p className="rh-library-error">{t("rhlib.loadFailed")}</p>
           ) : records.map(record => (
             <button
               key={record.id}
@@ -156,7 +159,7 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
         {selected ? (
           <footer className="rh-library-footer">
             <strong title={selected.name}>{selected.name}</strong>
-            <a href={`https://www.runninghub.ai/ai-detail/${selected.id}`} target="_blank" rel="noreferrer" aria-label="Mở trên RunningHub">
+            <a href={`https://www.runninghub.ai/ai-detail/${selected.id}`} target="_blank" rel="noreferrer" aria-label={t("rhlib.openOn")}>
               <ExternalLink size={13} />
             </a>
             <button
@@ -165,7 +168,7 @@ export function RhLibraryBrowser({ open, onClose, onImport, importing = false })
               disabled={importing}
               onClick={() => onImport?.(selected)}
             >
-              {importing ? <LoaderCircle className="spin" size={13} /> : <ArrowDownToLine size={13} />} Import & dùng ngay
+              {importing ? <LoaderCircle className="spin" size={13} /> : <ArrowDownToLine size={13} />} {t("rhlib.importNow")}
             </button>
           </footer>
         ) : null}

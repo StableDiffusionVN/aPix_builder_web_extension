@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from "lucide-react";
 import { mediaKindFromName } from "../lib/mediaKind";
+import { t } from "../lib/i18n";
 
 export function ImageLightbox({
   open,
@@ -40,21 +41,21 @@ export function ImageLightbox({
       className="image-lightbox"
       role="dialog"
       aria-modal="true"
-      aria-label={title || "Xem ảnh"}
+      aria-label={title || t("lightbox.view")}
       onMouseDown={event => {
         if (event.target === event.currentTarget) onClose?.();
       }}
     >
       <div className="image-lightbox-toolbar">
-        <button type="button" className="square-button" onClick={() => window.open(imageUrl, "_blank", "noopener")} aria-label="Mở tab mới">
+        <button type="button" className="square-button" onClick={() => window.open(imageUrl, "_blank", "noopener")} aria-label={t("lightbox.openTab")}>
           <ExternalLink size={16} />
         </button>
         {onDownload ? (
-          <button type="button" className="square-button" onClick={onDownload} aria-label="Tải ảnh">
+          <button type="button" className="square-button" onClick={onDownload} aria-label={t("lightbox.download")}>
             <Download size={16} />
           </button>
         ) : null}
-        <button type="button" className="square-button" onClick={onClose} aria-label="Đóng">
+        <button type="button" className="square-button" onClick={onClose} aria-label={t("common.close")}>
           <X size={18} />
         </button>
       </div>
@@ -65,7 +66,7 @@ export function ImageLightbox({
             className="image-lightbox-nav image-lightbox-previous"
             onClick={onPrevious}
             disabled={!canPrevious}
-            aria-label="Ảnh trước"
+            aria-label={t("lightbox.previous")}
           >
             <ChevronLeft size={26} />
           </button>
@@ -74,7 +75,7 @@ export function ImageLightbox({
             className="image-lightbox-nav image-lightbox-next"
             onClick={onNext}
             disabled={!canNext}
-            aria-label="Ảnh tiếp theo"
+            aria-label={t("lightbox.next")}
           >
             <ChevronRight size={26} />
           </button>

@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 const DB_NAME = "apix-builder-web-extension";
 const DB_VERSION = 3;
 const INPUT_STORE = "input";
@@ -82,7 +84,7 @@ export async function deleteOutputs(ids) {
       for (const id of outputIds) store.delete(id);
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error || new Error("Không thể xóa output đã chọn"));
+      transaction.onabort = () => reject(transaction.error || new Error(t("output.deleteFailed")));
     });
   } finally {
     db.close();
@@ -118,7 +120,7 @@ export async function writeWorkflowPresets(presetsByTemplate) {
       }
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error || new Error("Không thể lưu preset"));
+      transaction.onabort = () => reject(transaction.error || new Error(t("preset.saveFailed")));
     });
   } finally {
     db.close();

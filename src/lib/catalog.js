@@ -1,4 +1,5 @@
 import { choiceOptionsFromField, lookupMenuSubFields, menuChoiceOptions, resolveMenuStoredValue } from "./menuChoices.js";
+import { t } from "./i18n.js";
 import { isDynamicFieldType, resolveDynamicFieldType } from "./dynamicTypes.js";
 
 const APP_DESCRIPTIONS = {
@@ -68,7 +69,7 @@ export async function loadTemplateConfig(item) {
   if (item?.config) return item.config;
   if (!item?.configUrl) return null;
   const response = await fetch(item.configUrl);
-  if (!response.ok) throw new Error("Không thể tải template");
+  if (!response.ok) throw new Error(t("catalog.loadTemplateFailed"));
   return response.json();
 }
 

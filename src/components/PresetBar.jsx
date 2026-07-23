@@ -1,5 +1,6 @@
 import { Bookmark, BookmarkPlus, Check, RefreshCw, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { t } from "../lib/i18n";
 
 export function PresetBar({ templateId, presets, onLoad, onSave, onUpdate, onDelete, storageWarning = "" }) {
   const [selectedId, setSelectedId] = useState("");
@@ -34,7 +35,7 @@ export function PresetBar({ templateId, presets, onLoad, onSave, onUpdate, onDel
     const name = saveName.trim() || "Preset";
     const id = onSave(name);
     if (id === null) {
-      setNameError(`Preset "${name}" đã tồn tại`);
+      setNameError(t("preset.exists", { name }));
       return;
     }
     setSelectedId(id);
@@ -65,14 +66,14 @@ export function PresetBar({ templateId, presets, onLoad, onSave, onUpdate, onDel
                 value={saveName}
                 onChange={event => { setSaveName(event.target.value); if (nameError) setNameError(""); }}
                 onKeyDown={handleSaveKeyDown}
-                placeholder="Tên preset"
+                placeholder={t("preset.namePlaceholder")}
                 autoFocus
               />
             </div>
-            <button type="button" className="square-button" onClick={handleConfirmSave} title="Lưu preset">
+            <button type="button" className="square-button" onClick={handleConfirmSave} title={t("preset.save")}>
               <Check size={15} />
             </button>
-            <button type="button" className="square-button" onClick={() => { setSaving(false); setNameError(""); }} title="Hủy">
+            <button type="button" className="square-button" onClick={() => { setSaving(false); setNameError(""); }} title={t("common.cancel")}>
               <X size={15} />
             </button>
           </div>
@@ -83,21 +84,21 @@ export function PresetBar({ templateId, presets, onLoad, onSave, onUpdate, onDel
           <div className="preset-select-wrap">
             <Bookmark size={15} />
             <select value={selectedId} onChange={event => handleSelect(event.target.value)} aria-label="Preset">
-              <option value="">Không dùng preset</option>
+              <option value="">{t("preset.none")}</option>
               {presets.map(preset => (
                 <option key={preset.id} value={preset.id}>{preset.name}</option>
               ))}
             </select>
           </div>
-          <button type="button" className="square-button" onClick={handleSaveClick} title="Lưu preset mới">
+          <button type="button" className="square-button" onClick={handleSaveClick} title={t("preset.saveNew")}>
             <BookmarkPlus size={15} />
           </button>
           {selectedPreset ? (
             <>
-              <button type="button" className="square-button" onClick={() => onUpdate(selectedId)} title={`Cập nhật ${selectedPreset.name}`}>
+              <button type="button" className="square-button" onClick={() => onUpdate(selectedId)} title={t("preset.update", { name: selectedPreset.name })}>
                 <RefreshCw size={15} />
               </button>
-              <button type="button" className="square-button danger-text" onClick={() => { onDelete(selectedId); setSelectedId(""); }} title="Xóa preset">
+              <button type="button" className="square-button danger-text" onClick={() => { onDelete(selectedId); setSelectedId(""); }} title={t("preset.delete")}>
                 <Trash2 size={15} />
               </button>
             </>

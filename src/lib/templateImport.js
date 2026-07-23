@@ -1,4 +1,5 @@
 import YAML from "yaml";
+import { t } from "./i18n.js";
 
 const MANIFEST_NAMES = ["app_build.json", "app_build.yaml", "app_build.yml"];
 const MAX_SCAN_ENTRIES = 300;
@@ -26,7 +27,7 @@ function joinPath(dir, name) {
 }
 
 async function parseManifest(file) {
-  if (file.size > MAX_MANIFEST_BYTES) throw new Error(`${file.name} vượt quá giới hạn 2 MB`);
+  if (file.size > MAX_MANIFEST_BYTES) throw new Error(t("tpl.manifestTooLarge", { name: file.name }));
   const text = await file.text();
   if (/\.json$/i.test(file.name)) return JSON.parse(text);
   return YAML.parse(text);
@@ -38,15 +39,15 @@ async function yieldToBrowser() {
 
 async function fileFromHandle(handle, maxBytes, label) {
   const file = await handle.getFile();
-  if (file.size > maxBytes) throw new Error(`${label} vượt quá giới hạn ${Math.round(maxBytes / 1024 / 1024)} MB`);
+  if (file.size > maxBytes) throw new Error(t("tpl.fileTooLarge", { label, limit: Math.round(maxBytes / 1024 / 1024) }));
   return file;
 }
 
 export async function importTemplateDirectory(rootHandle, kind) {
   if (!["comfy", "runninghub-workflow"].includes(kind)) {
-    throw new Error("Chỉ ComfyUI và RH Workflow hỗ trợ import thư mục template");
+    throw new Error(t("tpl.dirModeUnsupported"));
   }
-  if (!rootHandle || rootHandle.kind !== "directory") throw new Error("Thư mục template không hợp lệ");
+  if (!rootHandle || rootHandle.kind !== "directory") throw new Error(t("tpl.invalidDir"));
 
   const queue = [{ handle: rootHandle, depth: 0, path: rootHandle.name || "templates" }];
   const imported = [];
@@ -60,7 +61,7 @@ export async function importTemplateDirectory(rootHandle, kind) {
     for await (const [name, handle] of current.handle.entries()) {
       scannedEntries += 1;
       if (scannedEntries > MAX_SCAN_ENTRIES) {
-        throw new Error(`Thư mục quá lớn. Chỉ quét tối đa ${MAX_SCAN_ENTRIES} mục và sâu ${MAX_SCAN_DEPTH} cấp.`);
+        throw new Error(t("tpl.dirTooLarge", { entries: MAX_SCAN_ENTRIES, depth: MAX_SCAN_DEPTH }));
       }
       if (handle.kind === "file" && (MANIFEST_NAMES.includes(name) || name === "api.json")) {
         fileHandles.set(name, handle);
@@ -105,8 +106,8 @@ export async function importTemplateDirectory(rootHandle, kind) {
 
   if (!imported.length) {
     throw new Error(kind === "comfy"
-      ? "Không tìm thấy template hợp lệ có app_build và api.json"
-      : "Không tìm thấy app_build có runninghub.workflowId");
+      ? t("tpl.noValidComfyDir")
+      : t("tpl.noValidRhDir"));
   }
   return imported;
 }
@@ -125,13 +126,13 @@ export async function importTemplateZip(file, kind) {
       Object.defineProperty(synthetic, "webkitRelativePath", { value: name });
       return synthetic;
     });
-  if (!files.length) throw new Error("Tệp .zip rỗng");
+  if (!files.length) throw new Error(t("tpl.emptyZip"));
   return importTemplateFiles(files, kind);
 }
 
 export async function importTemplateFiles(fileList, kind) {
   if (!['comfy', 'runninghub-workflow'].includes(kind)) {
-    throw new Error("Chỉ ComfyUI và RH Workflow hỗ trợ import thư mục template");
+    throw new Error(t("tpl.dirModeUnsupported"));
   }
   const files = Array.from(fileList || []);
   const byPath = new Map(files.map(file => [normalizedPath(file), file]));
@@ -142,7 +143,7 @@ export async function importTemplateFiles(fileList, kind) {
     if (!current || /\.json$/i.test(file.name)) manifestByDirectory.set(directory, file);
   }
   const manifests = [...manifestByDirectory.values()];
-  if (!manifests.length) throw new Error("Không tìm thấy app_build.json hoặc app_build.yaml trong thư mục");
+  if (!manifests.length) throw new Error(t("tpl.noManifest"));
 
   const imported = [];
   for (const manifest of manifests) {
@@ -170,15 +171,15 @@ export async function importTemplateFiles(fileList, kind) {
   }
   if (!imported.length) {
     throw new Error(kind === "comfy"
-      ? "Không có template hợp lệ: mỗi template ComfyUI cần app_build và api.json"
-      : "Không có RH Workflow hợp lệ: app_build cần runninghub.workflowId");
+      ? t("tpl.noValidComfy")
+      : t("tpl.noValidRh"));
   }
   return imported;
 }
 
 export function createCustomRunningHubApp(appId, info = null) {
   const id = String(appId || "").trim();
-  if (!/^\d{8,}$/.test(id)) throw new Error("RunningHub App ID phải là chuỗi số hợp lệ");
+  if (!/^\d{8,}$/.test(id)) throw new Error(t("tpl.invalidAppId"));
   return {
     id: `runninghub-app:${id}`,
     slug: id,

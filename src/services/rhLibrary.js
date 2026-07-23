@@ -4,30 +4,37 @@
 
 const BASE_URL = "https://www.runninghub.ai";
 
-// Tên danh mục theo ID tag (ổn định) — hiển thị tiếng Việt bất kể API trả en/zh.
-export const CATEGORY_NAMES_VI = {
-  "1671123934319734000": "Nhân vật ảo",
-  "1671123934319734090": "Tạo ảnh",
-  "1671123934319734091": "Tạo video",
-  "1671123934319734093": "Hiệu ứng video",
-  "1671123934319734094": "Anime",
-  "1871151815242543118": "Chuyển phong cách",
-  "1871151815242543119": "Poster",
-  "1671123934319734092": "Tạo âm thanh",
-  "1871151815242543115": "Chỉnh sửa ảnh",
-  "1871151815242543107": "Nhiếp ảnh",
-  "1871151815242543108": "Phim & Game",
-  "1671123934319734095": "Mô hình 3D",
-  "1871151815242543109": "Sáng tạo",
-  "1871151815242543110": "Thiết kế đồ họa",
-  "1871151815242543111": "Thương mại điện tử",
-  "1871151815242543112": "Thiết kế không gian",
-  "1871151815242543113": "Nghệ thuật cách điệu",
-  "1871151815242543114": "API",
-  "1875941016195789655": "Truyện tranh động AI",
-  "1871151815242543116": "Dựng video",
-  "1871151815242543117": "Khác"
+// Tên danh mục theo ID tag (ổn định) — hiển thị theo ngôn ngữ hiện hành bất kể API trả en/zh.
+export const CATEGORY_NAMES = {
+  "1671123934319734000": { vi: "Nhân vật ảo", en: "Virtual characters" },
+  "1671123934319734090": { vi: "Tạo ảnh", en: "Image generation" },
+  "1671123934319734091": { vi: "Tạo video", en: "Video generation" },
+  "1671123934319734093": { vi: "Hiệu ứng video", en: "Video effects" },
+  "1671123934319734094": { vi: "Anime", en: "Anime" },
+  "1871151815242543118": { vi: "Chuyển phong cách", en: "Style transfer" },
+  "1871151815242543119": { vi: "Poster", en: "Poster" },
+  "1671123934319734092": { vi: "Tạo âm thanh", en: "Audio generation" },
+  "1871151815242543115": { vi: "Chỉnh sửa ảnh", en: "Image editing" },
+  "1871151815242543107": { vi: "Nhiếp ảnh", en: "Photography" },
+  "1871151815242543108": { vi: "Phim & Game", en: "Film & Games" },
+  "1671123934319734095": { vi: "Mô hình 3D", en: "3D models" },
+  "1871151815242543109": { vi: "Sáng tạo", en: "Creative" },
+  "1871151815242543110": { vi: "Thiết kế đồ họa", en: "Graphic design" },
+  "1871151815242543111": { vi: "Thương mại điện tử", en: "E-commerce" },
+  "1871151815242543112": { vi: "Thiết kế không gian", en: "Interior design" },
+  "1871151815242543113": { vi: "Nghệ thuật cách điệu", en: "Stylized art" },
+  "1871151815242543114": { vi: "API", en: "API" },
+  "1875941016195789655": { vi: "Truyện tranh động AI", en: "AI motion comics" },
+  "1871151815242543116": { vi: "Dựng video", en: "Video editing" },
+  "1871151815242543117": { vi: "Khác", en: "Other" }
 };
+
+/** Tên danh mục theo ngôn ngữ ("vi"/"en") — fallback tên tag từ API. */
+export function categoryName(tagId, lang, fallback = "") {
+  const entry = CATEGORY_NAMES[tagId];
+  if (!entry) return fallback;
+  return entry[lang] || entry.vi || fallback;
+}
 
 // Rule DNR set Origin (tên app tiếng Anh) cài ở background — nhắc cài lại mỗi lần mở thư viện
 // (phòng trường hợp onInstalled chưa chạy sau khi update extension).

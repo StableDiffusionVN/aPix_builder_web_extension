@@ -1,6 +1,5 @@
 import { Lock, Zap } from "lucide-react";
-
-const PLUS_WARNING = "App chạy trên Plus GPU (48GB) — có thể tốn nhiều coin hơn.";
+import { t } from "../lib/i18n";
 
 function coverUrl(info) {
   const cover = info?.covers?.[0];
@@ -25,7 +24,7 @@ export function AppInfoCard({ info }) {
       <div className="app-info-body">
         <div className="app-info-title-row">
           <strong>{info.webappName}</strong>
-          {info.instanceType === "plus" && <span className="plus-label" title={PLUS_WARNING}><Zap size={11} /> Plus GPU</span>}
+          {info.instanceType === "plus" && <span className="plus-label" title={t("appInfo.plusWarning")}><Zap size={11} /> Plus GPU</span>}
           {info.accessEncrypted && <span className="encrypted-label"><Lock size={11} /> Private</span>}
         </div>
         <span className="app-info-id">ID {info.webappId}</span>

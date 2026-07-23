@@ -1,15 +1,16 @@
 import { ChevronDown, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { t } from "../lib/i18n";
 
 export function SearchableMenuDropdown({
   value,
   options,
   onChange,
-  placeholder = "Chọn model…",
-  searchPlaceholder = "Tìm kiếm…",
+  placeholder,
+  searchPlaceholder,
   disabled = false,
   loading = false,
-  emptyMessage = "Không có model"
+  emptyMessage
 }) {
   const rootRef = useRef(null);
   const searchRef = useRef(null);
@@ -62,8 +63,8 @@ export function SearchableMenuDropdown({
   }
 
   const buttonLabel = loading
-    ? "Đang tải danh sách…"
-    : selected?.label || selected?.value || placeholder;
+    ? t("dropdown.loadingList")
+    : selected?.label || selected?.value || placeholder || t("dropdown.placeholder");
 
   return (
     <div className={`searchable-menu-dropdown${open ? " is-open" : ""}`} ref={rootRef}>
@@ -92,7 +93,7 @@ export function SearchableMenuDropdown({
               type="search"
               value={query}
               onChange={event => setQuery(event.target.value)}
-              placeholder={searchPlaceholder}
+              placeholder={searchPlaceholder || t("dropdown.searchPlaceholder")}
               onKeyDown={event => {
                 if (event.key === "Enter" && filtered[0]) {
                   event.preventDefault();
@@ -103,7 +104,7 @@ export function SearchableMenuDropdown({
           </label>
           <ul id={listId} className="searchable-menu-list" role="listbox">
             {filtered.length === 0 ? (
-              <li className="searchable-menu-empty">{emptyMessage}</li>
+              <li className="searchable-menu-empty">{emptyMessage || t("dropdown.empty")}</li>
             ) : filtered.map(option => (
               <li key={option.value} role="presentation">
                 <button

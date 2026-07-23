@@ -1,4 +1,5 @@
 import { blobToBase64, comfyFetch } from "../lib/comfyBridge.js";
+import { t } from "../lib/i18n.js";
 import { buildComfyUrlCandidates, parseComfyTarget } from "../lib/comfyTarget.js";
 import { expandActiveFields } from "../lib/catalog.js";
 import { fetchWithRetry } from "../lib/fetchRetry.js";
@@ -17,12 +18,12 @@ export function resetComfySession() {
 function formatComfyConnectionError(error, target) {
   const message = String(error?.message || error || "");
   if (/credentials|cannot be constructed from a url/i.test(message)) {
-    return "URL ComfyUI có user/password không hợp lệ cho trình duyệt. Dùng dạng https://user:pass@host hoặc host:user:pass.";
+    return t("comfy.badCredentialUrl");
   }
   if (/failed to fetch|networkerror|network error/i.test(message)) {
-    return "Không kết nối được ComfyUI. Kiểm tra ComfyUI đang chạy, URL đúng (vd. http://127.0.0.1:8188), và dùng --listen nếu kết nối từ máy khác.";
+    return t("comfy.cannotConnect");
   }
-  return message || `Không kết nối được ComfyUI tại ${target.label}`;
+  return message || t("comfy.cannotConnectAt", { target: target.label });
 }
 
 async function probeComfyEndpoint(url, authHeaders, signal) {
@@ -91,7 +92,7 @@ async function uploadImage(session, image, signal) {
       { name: "type", value: "input" },
       { name: "overwrite", value: "true" }
     ]
-  }), "ComfyUI upload thất bại");
+  }), t("comfy.uploadFailed"));
   return response.json();
 }
 
@@ -99,7 +100,7 @@ function resolveWorkflowPath(workflow, id) {
   const [nodeId, ...rest] = String(id).split("-");
   const rawPath = rest[0] === "inputs" ? rest.slice(1).join("-") : rest.join("-");
   const inputs = workflow[nodeId]?.inputs;
-  if (!inputs) throw new Error(`Không tìm thấy node ${nodeId}`);
+  if (!inputs) throw new Error(t("comfy.nodeNotFound", { node: nodeId }));
   // Ưu tiên key phẳng: một số node ComfyUI dùng tên input có dấu chấm (vd "resize_type.longer_size").
   if (Object.prototype.hasOwnProperty.call(inputs, rawPath)) {
     return { target: inputs, key: rawPath };
@@ -108,7 +109,7 @@ function resolveWorkflowPath(workflow, id) {
   let cursor = inputs;
   for (let index = 0; index < path.length - 1; index += 1) {
     cursor = cursor[path[index]];
-    if (!cursor || typeof cursor !== "object") throw new Error(`Không tìm thấy trường ${rawPath}`);
+    if (!cursor || typeof cursor !== "object") throw new Error(t("comfy.fieldNotFound", { field: rawPath }));
   }
   return { target: cursor, key: path.at(-1) };
 }
@@ -131,7 +132,7 @@ export async function interruptComfyWorkflow(url) {
     authHeaders: session.authHeaders
   });
   if (!response.ok) {
-    throw new Error(`ComfyUI interrupt thất bại: ${response.status}`);
+    throw new Error(t("comfy.interruptFailed", { status: response.status }));
   }
 }
 
@@ -159,7 +160,7 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
       ? structuredClone(inlineWorkflow)
       : JSON.parse(JSON.stringify(inlineWorkflow));
   } else {
-    const workflowResponse = await assertOk(await fetch(workflowUrl), "Không thể tải workflow");
+    const workflowResponse = await assertOk(await fetch(workflowUrl), t("comfy.workflowLoadFailed"));
     workflow = await workflowResponse.json();
   }
   // Mỗi field ảnh có record riêng (images: field.key → record); cache upload theo record
@@ -171,10 +172,10 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
     const type = field.ui.type;
     if (["image", "image_mask", "file"].includes(type)) {
       const record = images[field.key];
-      if (!record) throw new Error(`Thiếu ảnh cho "${field.ui.label || field.key}"`);
+      if (!record) throw new Error(t("comfy.missingImage", { label: field.ui.label || field.key }));
       const cacheKey = record.id || record;
       if (!uploadCache.has(cacheKey)) {
-        onStatus?.("Đang tải ảnh lên ComfyUI…");
+        onStatus?.(t("comfy.uploadingImage"));
         uploadCache.set(cacheKey, await uploadImage(session, record, signal));
       }
       const uploaded = uploadCache.get(cacheKey);
@@ -186,22 +187,22 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
     assignValue(workflow, field.id, value === "random_seed" ? Math.floor(Math.random() * Number.MAX_SAFE_INTEGER) : value);
   }
 
-  onStatus?.("Đang đưa workflow vào hàng đợi…");
+  onStatus?.(t("comfy.queueing"));
   const queuedResponse = await assertOk(await comfyFetch(`${session.httpBase}${session.apiPrefix}/prompt`, {
     method: "POST",
     json: { prompt: workflow, client_id: crypto.randomUUID() },
     signal,
     authHeaders: session.authHeaders
-  }), "ComfyUI từ chối workflow");
+  }), t("comfy.rejected"));
   const queued = await queuedResponse.json();
-  if (!queued.prompt_id) throw new Error("ComfyUI không trả về prompt_id");
+  if (!queued.prompt_id) throw new Error(t("comfy.noPromptId"));
 
   const history = await waitForHistory(session, queued.prompt_id, signal, onStatus);
   const entry = history[queued.prompt_id];
   const outputImages = collectComfyOutputImages(config, entry);
   if (!outputImages.length) {
     const status = entry?.status ? ` Status: ${JSON.stringify(entry.status)}` : "";
-    throw new Error(`Workflow hoàn tất nhưng không có ảnh tại output node trong template.${status}`);
+    throw new Error(t("comfy.noOutputImages", { status }));
   }
 
   return Promise.all(outputImages.map(async (output, index) => {
@@ -217,10 +218,10 @@ export async function runComfyWorkflow({ url, workflowUrl, workflow: inlineWorkf
         authHeaders: session.authHeaders
       }),
       onRetry: ({ attempt }) => {
-        onStatus?.(`Đang thử tải lại output ComfyUI (${attempt})…`);
+        onStatus?.(t("comfy.retryDownload", { attempt }));
       }
     });
-    if (!response.ok) throw new Error(`Không thể tải output ComfyUI: ${response.status}`);
+    if (!response.ok) throw new Error(t("comfy.downloadFailed", { status: response.status }));
     return { blob: await response.blob(), name: output.filename || `comfy-${Date.now()}-${index}.png` };
   }));
 }
@@ -233,12 +234,12 @@ async function waitForHistory(session, promptId, signal, onStatus) {
         signal,
         authHeaders: session.authHeaders
       }),
-      "Không đọc được ComfyUI history"
+      t("comfy.historyFailed")
     );
     const history = await response.json();
     if (history[promptId]) return history;
-    onStatus?.("ComfyUI đang xử lý…");
+    onStatus?.(t("comfy.processing"));
     await delay(1200, signal);
   }
-  throw new Error("ComfyUI quá thời gian chờ 20 phút");
+  throw new Error(t("comfy.timeout"));
 }

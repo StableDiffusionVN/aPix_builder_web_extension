@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Loader2, Play, Square, Trash2 } from "lucide-react";
+import { t } from "../lib/i18n";
 
 export function RunControls({
   running,
@@ -10,7 +11,7 @@ export function RunControls({
   onCancel,
   onClearQueue,
   onStopAll,
-  runLabel = "Chạy workflow",
+  runLabel = "",
   runningLabel = "",
   runningRunner = ""
 }) {
@@ -59,9 +60,9 @@ export function RunControls({
         <span>
           {running
             ? (runningLabel
-              ? `${runningRunner || "Đang chạy"}: ${runningLabel}${queueCount ? ` (+${queueCount} chờ)` : ""}`
-              : `Hàng chờ${queueCount ? ` (${queueCount})` : ""}`)
-            : runLabel}
+              ? `${runningRunner || t("run.running")}: ${runningLabel}${queueCount ? t("run.waitSuffix", { count: queueCount }) : ""}`
+              : `${t("run.queue")}${queueCount ? t("run.queueSuffix", { count: queueCount }) : ""}`)
+            : runLabel || t("run.runLabel", { name: t("run.workflowFallback") })}
         </span>
       </button>
       <button
@@ -72,7 +73,7 @@ export function RunControls({
           event.stopPropagation();
           setMenuOpen(current => !current);
         }}
-        aria-label="Tùy chọn chạy"
+        aria-label={t("run.options")}
         aria-expanded={menuOpen}
       >
         <ChevronDown size={14} />

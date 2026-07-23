@@ -2,8 +2,10 @@ import { ImagePlus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useRef } from "react";
 import { formatBytes, getDroppedImageUrl } from "../lib/images";
 import { useObjectUrl } from "../hooks/useObjectUrl";
+import { t } from "../lib/i18n";
 
-export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = false, label = "Import ảnh" }) {
+export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = false, label }) {
+  const panelLabel = label || t("import.title");
   const inputRef = useRef(null);
   const previewUrl = useObjectUrl(image?.blob);
 
@@ -24,9 +26,9 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
         data-testid="drop-zone"
       >
         <ImagePlus size={27} />
-        <strong>Kéo ảnh vào đây</strong>
+        <strong>{t("import.dropHere")}</strong>
         <button className="secondary-button" onClick={() => inputRef.current?.click()} disabled={busy}>
-          <Upload size={15} /> Chọn ảnh
+          <Upload size={15} /> {t("import.chooseImage")}
         </button>
         <input
           ref={inputRef}
@@ -39,14 +41,14 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
 
       {image && (
         <div className="selected-image" data-testid="selected-image">
-          {previewUrl ? <img src={previewUrl} alt="Ảnh input" /> : null}
+          {previewUrl ? <img src={previewUrl} alt={t("import.inputAlt")} /> : null}
           <div className="image-meta">
             <strong>{image.name}</strong>
             <span>{image.width} × {image.height} · {formatBytes(image.size)}</span>
           </div>
           <div className="selected-actions">
-            <button className="icon-text-button" onClick={() => inputRef.current?.click()} aria-label="Thay ảnh"><RefreshCw size={16} /></button>
-            <button className="icon-text-button danger-text" onClick={onClear} aria-label="Xóa ảnh"><Trash2 size={16} /></button>
+            <button className="icon-text-button" onClick={() => inputRef.current?.click()} aria-label={t("import.replace")}><RefreshCw size={16} /></button>
+            <button className="icon-text-button danger-text" onClick={onClear} aria-label={t("import.remove")}><Trash2 size={16} /></button>
           </div>
         </div>
       )}
@@ -57,15 +59,15 @@ export function ImportPanel({ image, onFile, onUrl, onClear, busy, embedded = fa
   if (embedded) {
     return (
       <div className="field import-field">
-        <span>{label}</span>
+        <span>{panelLabel}</span>
         {body}
       </div>
     );
   }
 
   return (
-    <section className="tool-section import-section" aria-label={label}>
-      <h2>{label}</h2>
+    <section className="tool-section import-section" aria-label={panelLabel}>
+      <h2>{panelLabel}</h2>
       {body}
     </section>
   );

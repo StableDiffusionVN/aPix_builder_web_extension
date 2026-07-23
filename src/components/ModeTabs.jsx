@@ -1,4 +1,5 @@
 import { Boxes, Cloud, Server } from "lucide-react";
+import { t } from "../lib/i18n";
 
 export const MODES = [
   { id: "comfy", label: "ComfyUI", shortLabel: "Comfy", icon: Server },
@@ -8,7 +9,7 @@ export const MODES = [
 
 export function ModeTabs({ value, onChange }) {
   return (
-    <nav className="mode-tabs" aria-label="Chế độ xử lý">
+    <nav className="mode-tabs" aria-label={t("modes.aria")}>
       {MODES.map(mode => {
         const Icon = mode.icon;
         const active = value === mode.id;

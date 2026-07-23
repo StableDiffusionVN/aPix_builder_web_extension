@@ -1,3 +1,5 @@
+import { t } from "./i18n.js";
+
 export function fileStem(name = "image") {
   return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "") || "image";
 }
@@ -24,7 +26,7 @@ export function getImageDimensions(blob) {
       URL.revokeObjectURL(url);
     };
     image.onerror = () => {
-      reject(new Error("Tệp được chọn không phải ảnh hợp lệ"));
+      reject(new Error(t("import.notAnImage")));
       URL.revokeObjectURL(url);
     };
     image.src = url;
@@ -32,7 +34,7 @@ export function getImageDimensions(blob) {
 }
 
 export async function normalizeImageRecord(blob, suggestedName = "image") {
-  if (!blob?.type?.startsWith("image/")) throw new Error("aPix Builder chỉ nhận tệp hình ảnh");
+  if (!blob?.type?.startsWith("image/")) throw new Error(t("import.imageOnly"));
   const dimensions = await getImageDimensions(blob);
   const ext = extensionForType(blob.type);
   const name = suggestedName.includes(".") ? suggestedName : `${fileStem(suggestedName)}.${ext}`;
