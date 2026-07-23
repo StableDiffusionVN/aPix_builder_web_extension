@@ -743,3 +743,6 @@ video.image-lightbox-image {
 .app-info-cost > span { white-space: nowrap; }
 .app-info-cost-pair, .app-info-paid-model { white-space: nowrap; }
 .app-info-cost-empty { font-style: italic; opacity: .8; color: var(--muted); }
+
+.app-info-stats { display: flex; flex-wrap: nowrap; overflow: hidden; gap: 10px; font-size: 11px; color: var(--muted); }
+.app-info-stats b { color: var(--text); font-weight: 700; }

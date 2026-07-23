@@ -49,6 +49,15 @@ export function AppInfoCard({ info }) {
             {info.hasPaidModel && <span className="app-info-paid-model" title={t("appInfo.paidModelHint")}>💲 {t("appInfo.paidModel")}</span>}
           </div>
         )}
+        {info.statisticsInfo ? (
+          <div className="app-info-stats">
+            {[["useCount", "appInfo.statUses"], ["collectCount", "appInfo.statCollects"], ["likeCount", "appInfo.statLikes"], ["downloadCount", "appInfo.statDownloads"]]
+              .filter(([key]) => info.statisticsInfo[key] != null && String(info.statisticsInfo[key]).trim() !== "")
+              .map(([key, labelKey]) => (
+                <span key={key}><b>{Number(info.statisticsInfo[key]).toLocaleString()}</b> {t(labelKey)}</span>
+              ))}
+          </div>
+        ) : null}
         {!!tags.length && <div className="app-info-tags">{tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
       </div>
     </article>
